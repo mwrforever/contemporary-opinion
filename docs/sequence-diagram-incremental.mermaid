@@ -1,0 +1,69 @@
+%% ===== 场景①：语音"设置提醒时间为10秒" 双路径解析 → 提醒调度（G1）=====
+sequenceDiagram
+    actor User
+    participant VI as VoiceInputScreen
+    participant SVC as AliyunScheduleService
+    participant NLP as NlpParser
+    participant ST as ScheduledTask
+    participant TS as TaskStore
+    participant RM as ReminderService
+
+    User->>VI: 语音「设置提醒时间为10秒，去倒垃圾」
+    VI->>SVC: schedule(transcript)
+    alt 云端可用（增强 prompt: remind_in_seconds + 核心目的title）
+        SVC->>SVC: _callModel() → parseJson(resp, now)
+        Note over SVC: scheduledTime = now + 10s<br/>countdownSeconds=10, title='去倒垃圾'
+        SVC-->>VI: List<ScheduledTask>(countdownSeconds, scheduledTime)
+    else 云端异常/空 → 本地兜底
+        SVC->>NLP: parse(transcript)
+        NLP->>NLP: 秒级正则 + _extractCorePurpose
+        Note over NLP: countdownSeconds=10<br/>scheduledTime=now+10s, title='去倒垃圾'
+        NLP-->>SVC: List<ParsedTask>
+        SVC->>ST: _fallback → ScheduledTask(countdownSeconds)
+    end
+    SVC-->>VI: List<ScheduledTask>
+    loop 每个任务
+        VI->>ST: toTask(...) → Task(countdownSeconds=10, scheduledTime=now+10s)
+        VI->>TS: addWithConflictCheck(task)
+        VI->>RM: notifyTaskChanged(task)
+        Note over RM: RepeatType.none → 单次 zonedSchedule(now+10s) + Timer<br/>（提醒层不改）
+    end
+    RM-->>User: 10 秒后系统通知 + 应用内响铃/播报
+
+%% ===== 场景②：购物子购物车创建 / 统计（G2）=====
+sequenceDiagram
+    actor User
+    participant SD as ShoppingDetail
+    participant NS as NotebookStore
+    participant REP as StatsReport
+
+    User->>SD: 打开购物清单
+    SD->>NS: shoppingCarts + shopping
+    NS-->>SD: carts 列表 + items(按 cartId 分组, ''→未分组)
+    User->>SD: 新建子购物车「生鲜」
+    SD->>NS: addCart(NotebookShoppingCart)
+    NS-->>SD: 写 notebook_shopping_carts 盒子
+    User->>SD: 在「生鲜」内录入购物项
+    SD->>NS: addShopping(item with cartId)
+    User->>SD: 查看「生鲜」统计
+    SD->>NS: cartsOf('生鲜')
+    NS-->>SD: ΣexpectedPrice / ΣactualPrice / 差额
+    User->>SD: 打开报表
+    SD->>REP: buildStatsBuckets(shopping→ReportDatum, 粒度, anchor)
+    REP-->>SD: 6 桶柱状图（单色 accent）
+
+%% ===== 场景③：账本报表 / 购物报表复用 StatsReport（G3 + 共享）=====
+sequenceDiagram
+    actor User
+    participant LD as LedgerDetail
+    participant NS as NotebookStore
+    participant REP as StatsReport
+
+    User->>LD: 打开收支账本 → 报表
+    LD->>NS: ledger
+    NS-->>LD: 条目列表(date, amount, kind)
+    LD->>REP: buildStatsBuckets(ReportDatum(date,amount,kind), 粒度, anchor)
+    Note over REP: 收入→ok / 支出→danger（堆叠）<br/>恒 6 桶
+    REP-->>LD: StatsReport(双色柱图)
+
+    Note over LD,REP: 购物报表复用同一组件（单色 accent），无重复实现

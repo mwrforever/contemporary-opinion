@@ -1,0 +1,117 @@
+classDiagram
+    %% ===== 数据模型层 =====
+    class NotebookShoppingCart {
+        +String id
+        +String name
+        +DateTime createdAt
+        +String? note
+        +fromJson(Map) NotebookShoppingCart
+        +toJson() Map
+    }
+    class NotebookShopping {
+        +String id
+        +String item
+        +num expectedPrice
+        +num actualPrice
+        +String category
+        +String note
+        +String cartId
+        +String date
+        +fromJson(Map) NotebookShopping
+        +toJson() Map
+    }
+    class NotebookLedger {
+        +String id
+        +String title
+        +String kind
+        +num amount
+        +String category
+        +String date
+        +String note
+    }
+    class Dictionary {
+        <<const source>>
+        +List~String~ kTransportModes
+        +List~String~ kBillingTypes
+    }
+
+    %% ===== 任务模型（G1 双路径字段）=====
+    class ParsedTask {
+        +String title
+        +DateTime? scheduledTime
+        +RepeatType repeat
+        +List~int~ customWeekdays
+        +int? countdownMinutes
+        +int? countdownSeconds
+    }
+    class ScheduledTask {
+        +String title
+        +DateTime? scheduledTime
+        +int durationMinutes
+        +String? resource
+        +RepeatType repeat
+        +List~int~ customWeekdays
+        +String? note
+        +int? countdownSeconds
+        +toTask(...) Task
+    }
+    class Task {
+        +String id
+        +String title
+        +DateTime? scheduledTime
+        +int? countdownMinutes
+        +int? countdownSeconds
+        +...
+    }
+
+    %% ===== 共享报表组件（G2/G3）=====
+    class StatsReport {
+        +List~StatsBucket~ buckets
+        +String unit
+        +String? title
+        +Widget? header
+        +build(BuildContext) Widget
+    }
+    class StatsBucket {
+        +String label
+        +num value
+        +Color color
+        +num? secondaryValue
+        +Color? secondaryColor
+    }
+    class ReportDatum {
+        +String date
+        +num value
+        +String? kind
+    }
+    class ReportGranularity {
+        <<enum>>
+        day
+        month
+        year
+    }
+
+    %% ===== 仓储 =====
+    class NotebookStore {
+        +List~NotebookShoppingCart~ shoppingCarts
+        +List~NotebookShopping~ shopping
+        +List~NotebookLedger~ ledger
+        +addCart(NotebookShoppingCart)
+        +updateCart(NotebookShoppingCart)
+        +deleteCart(String)
+        +cartsOf(String) List~NotebookShopping~
+        +init()
+    }
+
+    %% ===== 关系 =====
+    NotebookShopping "0..1" --> "cartId" NotebookShoppingCart : belongs to
+    NotebookStore "1" *-- "many" NotebookShoppingCart
+    NotebookStore "1" *-- "many" NotebookShopping
+    NotebookStore "1" *-- "many" NotebookLedger
+    ParsedTask <.. NlpParser : produces
+    ScheduledTask <.. AliyunScheduleService : produces
+    ScheduledTask ..> Task : toTask
+    StatsReport o-- StatsBucket
+    StatsBucket <.. buildStatsBuckets : from ReportDatum
+    NotebookLedger ..> Dictionary : uses kBillingTypes
+    NotebookTrip ..> Dictionary : uses kTransportModes/kBillingTypes

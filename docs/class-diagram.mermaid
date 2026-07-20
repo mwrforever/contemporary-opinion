@@ -1,0 +1,145 @@
+classDiagram
+    %% ── 现有复用（任务域）──
+    class Task {
+        String id
+        String title
+        DateTime scheduledTime
+        RepeatType repeat
+        List~int~ customWeekdays
+        TaskStatus status
+        String resource
+        ConflictState conflictState
+        bool effective
+        int durationMinutes
+    }
+    class ConflictDetector {
+        +ConflictResult detect(Task, List~Task~, ...)
+        +void applyDecision(Task, ConflictResult)
+        +void confirmOverride(Task)
+    }
+    class TaskStore {
+        <<ChangeNotifier>>
+        +List~Task~ all
+        +List~Task~ today
+        +addWithConflictCheck(Task)
+        +recheck(Task)
+        +resolveOverride(Task)
+    }
+    ConflictDetector ..> Task : mutates
+    TaskStore ..> Task : persists
+
+    %% ── 新增（提示词域，无审批）──
+    class PromptDef {
+        String id
+        String module        %% tasks | notebook
+        String sub_function  %% shopping | ledger | reading | trip | study | recipe（notebook 用）
+        String type          %% voice（仅 voice 类；manual 已删）
+        String description
+        String prompt        %% 实际注入 LLM 的 system 内容（来自 YAML 的 prompt 字段）
+    }
+    class PromptLoader {
+        +Future~List~PromptDef~~ loadAll()
+    }
+    PromptLoader ..> PromptDef : builds
+
+    %% ── 新增（记事本域，子功能固定模型）──
+    class NotebookShopping {
+        String id
+        String item
+        num expectedPrice
+        num actualPrice
+        String category
+        String note
+    }
+    class NotebookLedger {
+        String id
+        String title
+        String type        %% income | expense
+        num amount
+        String category
+        String date
+        String note
+    }
+    class NotebookReading {
+        String id
+        String title
+        String author
+        String status      %% want | reading | done
+        int rating         %% 1-5
+        String category
+        String note
+    }
+    class NotebookTrip {
+        String id
+        TripMeta meta
+        List~TransportRecord~ transports
+        List~TripDay~ days
+    }
+    class TripMeta {
+        String title
+        String city
+        String homeCity
+        TransportRecord intercityTransport
+        Hotel hotel
+    }
+    class TripDay {
+        String date
+        String label
+        List~Checkpoint~ checkpoints
+    }
+    class Checkpoint {
+        String name
+        TransportRecord transport
+        List~Billing~ billings
+        bool done
+        int rating
+        String note
+    }
+    class NotebookCourse {
+        String id
+        String title          %% 课程名（必填）
+        String source         %% 来源/平台，可选
+        String status         %% want | learning | done（课程级）
+        int progress          %% 0-100（课程级，可手动或按记录聚合）
+        int rating            %% 1-5（课程级，可选）
+        String category
+        String note
+        List~StudyRecord~ records
+    }
+    class StudyRecord {
+        String id
+        String title          %% 本节/本次记录主题（必填）
+        String content        %% 学习要点/笔记正文
+        int rating            %% 1-5（本节满意度，可选）
+        String note
+        DateTime createdAt
+    }
+    class NotebookRecipe {
+        String id
+        String name
+        String category
+        List~String~ ingredients
+        List~String~ steps
+        String difficulty  %% easy | medium | hard
+        int rating         %% 1-5
+        String note
+    }
+    NotebookStore ..> NotebookShopping : persists
+    NotebookStore ..> NotebookLedger : persists
+    NotebookStore ..> NotebookReading : persists
+    NotebookStore ..> NotebookTrip : persists
+    NotebookStore ..> NotebookCourse : persists
+    NotebookCourse "1" *-- "0..*" StudyRecord : contains
+    NotebookStore ..> NotebookRecipe : persists
+
+    %% ── UI 壳（聚合关系）──
+    class TabShell {
+        int currentIndex
+        +build()
+    }
+    class TasksTab
+    class NotebookTab
+    TabShell o-- TasksTab
+    TabShell o-- NotebookTab
+    TasksTab ..> PromptDef : reads tasks_voice
+    NotebookTab ..> PromptDef : reads notebook_voice_<sub_function>

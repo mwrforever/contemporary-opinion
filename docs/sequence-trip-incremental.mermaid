@@ -1,0 +1,40 @@
+sequenceDiagram
+    actor User
+    participant TD as TripDetail
+    participant DD as _TripDrillDown
+    participant Sheet as _CheckpointEditSheet
+    participant Store as NotebookStore
+
+    User->>TD: 点行程行
+    TD->>DD: push(trip)
+    DD-->>User: 按天展示打卡点（只读卡 + 金额）
+
+    Note over User,DD: 新增打卡点（R3）
+    User->>DD: 点某天「+ 打卡点」
+    DD->>Sheet: show(dayIndex, initial: null)
+    User->>Sheet: 填 名称 / 交通chip(单选) / 计费chip(多选) / 完成开关 / 星级 / 备注
+    User->>Sheet: 保存
+    Sheet->>DD: onSave(TripCheckpoint)
+    DD->>DD: _trip.copyWith(该天追加 cp)
+    DD->>Store: updateTrip(newTrip)
+    Store-->>DD: notifyListeners()
+    DD-->>User: 列表刷新（新打卡点出现）
+
+    Note over User,DD: 编辑已有打卡点（R3）
+    User->>DD: 点已有打卡点卡
+    DD->>Sheet: show(dayIndex, initial: cp)
+    User->>Sheet: 改字段 → 保存
+    Sheet->>DD: onSave(updatedCp)
+    DD->>DD: _trip.copyWith(替换该 cp)
+    DD->>Store: updateTrip(newTrip)
+
+    Note over User,DD: 删除打卡点（R3）
+    User->>DD: 点打卡点卡删除图标
+    DD->>DD: ConfirmDialog 确认
+    DD->>DD: _trip.copyWith(移除该 cp)
+    DD->>Store: updateTrip(newTrip)
+    Store-->>DD: notifyListeners()
+    DD-->>User: 列表刷新
+
+    Note over User,DD: 与语音数据共存
+    Note over DD,Store: copyWith 仅改 targeted day/checkpoint，其余 days/checkpoints 原样保留

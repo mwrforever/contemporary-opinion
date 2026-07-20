@@ -1,0 +1,160 @@
+classDiagram
+  %% ============ 数据模型 ============
+  class Task {
+    +String id
+    +String title
+    +DateTime scheduledTime
+    +int countdownMinutes
+    +int countdownSeconds
+    +RepeatType repeat
+    +List~int~ customWeekdays
+    +TaskStatus status
+    +TaskSource source
+    +DateTime createdAt
+    +DateTime completedAt
+    +int notificationId
+    +String resource
+    +ConflictState conflictState
+    +bool effective
+    +int durationMinutes
+    +int ringSeconds
+    +isRepeating() bool
+  }
+
+  class ScheduledTask {
+    +String title
+    +DateTime scheduledTime
+    +int durationMinutes
+    +String resource
+    +RepeatType repeat
+    +List~int~ customWeekdays
+    +String note
+    +int countdownSeconds
+    +int ringSeconds
+    +toTask(String id, int notificationId, DateTime createdAt) Task
+  }
+
+  class ParsedTask {
+    +String title
+    +DateTime scheduledTime
+    +RepeatType repeat
+    +List~int~ customWeekdays
+    +int countdownMinutes
+    +int countdownSeconds
+    +String resource
+    +int durationMinutes
+  }
+
+  class RepeatType {
+    <<enum>>
+    none
+    daily
+    weekly
+    weekdays
+    custom
+  }
+  Task "1" --> "1" RepeatType : repeat
+  ScheduledTask "1" --> "1" RepeatType : repeat
+  ParsedTask "1" --> "1" RepeatType : repeat
+
+  %% ============ 云端解析 ============
+  class AliyunScheduleService {
+    +Future~List~ScheduledTask~~ schedule(String transcript, List~Task~ existing)
+    -Future~String~ _callModel(String, List~Task~)
+    -List~ScheduledTask~ _fallback(String)
+    +List~ScheduledTask~ parseJson(String, DateTime now)
+  }
+  AliyunScheduleService ..> ScheduledTask : parseJson 返回
+  AliyunScheduleService ..> PromptLoader : byId('tasks_voice').prompt
+  AliyunScheduleService ..> NlpParser : _fallback 委托
+
+  class NlpParser {
+    +List~ParsedTask~ parse(String, DateTime now)
+    -ParsedTask _parseClause(String, DateTime)
+    -String _extractResource(String) String?
+    -int _extractDurationMinutes(String) int?
+    -String _extractCorePurpose(String)
+    -List~int~ _extractWeekdays(String)
+  }
+  NlpParser ..> ParsedTask : parse 返回
+
+  class PromptDef {
+    +String id
+    +PromptModule module
+    +String subFunction
+    +PromptType type
+    +String prompt
+    +String description
+  }
+  class PromptLoader {
+    +List~PromptDef~ all
+    +PromptDef byId(String)
+    +Future~List~PromptDef~~ loadAll()
+  }
+  PromptLoader ..> PromptDef : 缓存
+
+  %% ============ 反馈组件（新增） ============
+  class TaskFeedbackCard {
+    <<new>>
+    +FeedbackType type
+    +String message
+    +String actionLabel
+    +VoidCallback onAction
+    +Duration duration
+    +void show(BuildContext, {...})
+  }
+  class FeedbackType {
+    <<enum>>
+    success
+    delete
+    undo
+  }
+  TaskFeedbackCard "1" --> "1" FeedbackType : type
+
+  %% ============ UI 组件 ============
+  class TaskCard {
+    +Task task
+    +VoidCallback onTap
+    +VoidCallback onToggle
+    +VoidCallback onDelete
+    +Future~bool~ Function() confirmDismiss
+    +bool selectionMode
+    +VoidCallback? onLongPress
+    +VoidCallback? onSelect
+  }
+  TaskCard ..> TasksTab : confirmDismiss 回调(父级实现)
+
+  class TaskList {
+    +ValueChanged~Task~ onDelete
+    +Future~bool~ Function(Task) confirmDismiss
+    +TaskCard _card(Task, int)
+  }
+  TaskList ..> TaskCard : 透传 confirmDismiss
+
+  class VoiceInputScreen {
+    +Future~void~ _buildSchedule(String)
+    +Future~void~ _confirm()
+    +void _PreviewTile 展示(资源/时长/响铃)
+    +Task _candidates
+  }
+  VoiceInputScreen ..> AliyunScheduleService : schedule()
+  VoiceInputScreen ..> TaskFeedbackCard : 不在此弹(改 pop 回传)
+  VoiceInputScreen ..> TasksTab : Navigator.pop(result)
+
+  class TasksTab {
+    +void _showUndo(String, VoidCallback)
+    +Future~void~ _deleteWithUndo(Task, TaskStore)
+    +Future~bool~ _confirmDelete(Task)
+    +void _goVoice()  await pop 结果
+    +GlobalKey~ScaffoldMessengerState~ _messengerKey
+  }
+  TasksTab ..> TaskFeedbackCard : 删除/成功/撤销 三态
+  TasksTab ..> VoiceInputScreen : push + await 结果
+  TasksTab ..> TaskStore : add / delete / addWithConflictCheck
+
+  class TaskStore {
+    +Future~void~ add(Task)
+    +Future~void~ delete(Task)
+    +Future~void~ addWithConflictCheck(Task)
+  }
+  TasksTab ..> TaskStore

@@ -1,0 +1,61 @@
+name: daily_planner
+description: "纯前端 Flutter 每日规划助手：定时提醒 + 语音解析自动规划"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 本地存储（纯 Dart，零原生依赖）
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # 状态管理
+  provider: ^6.1.1
+
+  # 本地通知 / 精确调度
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.0
+
+  # 响铃（调用系统闹钟声，无需附带音频文件）
+  flutter_ringtone_player: ^4.0.0
+
+  # 语音播报
+  flutter_tts: ^4.0.2
+
+  # 语音识别（录音转文字，设备端兜底）
+  speech_to_text: ^7.0.0
+
+  # 阿里云接入：HTTP 调用 qwen3.7-plus（排期）+ qwen3-asr-flash（语音识别）
+  # 两者同为百炼/DashScope 模型，共用一个 DASHSCOPE_API_KEY
+  http: ^1.2.0
+  # 录音 PCM 采集
+  record: ^5.1.2
+  # record 包的 Web 实现（Web 端麦克风采集，承载 AliyunAsrService 的录音）
+  record_web: ^1.2.0
+  # Web 平台 API 现代封装（package:web/web.dart，替代已废弃的 dart:html）
+  web: ^1.1.0
+
+  # 工具
+  intl: ^0.19.0
+  uuid: ^4.4.0
+  permission_handler: ^11.3.1
+
+  # 提示词 YAML 解析（唯一新增硬依赖）
+  yaml: ^3.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/prompts/

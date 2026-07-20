@@ -1,0 +1,45 @@
+%% ============ SD1 · 启动与导航装配 ============
+sequenceDiagram
+    participant M as main()
+    participant H as Hive
+    participant S as TaskStore
+    participant R as ReminderService
+    participant P as PromptLoader
+    participant App as MyApp/TabShell
+    M->>H: initFlutter + registerAdapter(TaskAdapter)
+    M->>S: init()
+    M->>R: init/scheduleAll/markMissedIfNeeded
+    M->>P: loadAll()  %% 读 assets/prompts/*.yaml → PromptDef（无审批覆盖）
+    M->>App: runApp(ChangeNotifierProvider(S), Provider(R), ...)
+    Note over App: SplashScreen「开始规划」→ pushReplacement(TabShell)
+    App->>App: IndexedStack[ TasksTab, NotebookTab ]
+
+%% ============ SD2 · 语音录入 → 提示词取用 → LLM / 本地解析 ============
+sequenceDiagram
+    participant U as 用户
+    participant T as TasksTab(SpeedDial) / NotebookTab(FAB)
+    participant V as VoiceInputScreen / NotebookDetail
+    participant PD as PromptDef(<module>_voice[/<sub_function>])
+    participant AS as AliyunAsrService
+    participant SS as AliyunScheduleService / NotebookVoiceService
+    participant NL as NlpParser(本地兜底)
+    participant CD as ConflictDetector
+    participant S as TaskStore / NotebookStore
+    U->>T: 点「语音添加」
+    T->>V: push(录入页)
+    U->>V: 点麦克风说话
+    V->>AS: transcribe()
+    AS-->>V: transcript
+    V->>SS: parse(transcript, system=PD.prompt)   %% 设计阶段已批准，直接取用
+    SS-->>V: 结构化草稿（任务 / NotebookItem）
+    opt 任务模块
+        loop 每个候选
+            V->>CD: detect(candidate, existing)
+            CD-->>V: ConflictResult → applyDecision
+        end
+    end
+    V-->>U: preview
+    U->>V: 确认添加
+    V->>S: addWithConflictCheck / addItem
+    S-->>V: 完成 → pop
+    Note over V,S: 学习子功能：courseId 由 App 在「课程子页面」注入，记录直接挂该课程（LLM 不出课程名）
