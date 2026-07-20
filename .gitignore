@@ -55,3 +55,9 @@ overview.md
 
 # Stray junk file
 nul
+
+# Test log artifacts (junk, not source)
+ttest_log.txt
+dtest.log
+flutter_01.log
+flutter_test_full.log
