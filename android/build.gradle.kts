@@ -26,9 +26,14 @@ subprojects {
 // ...) require compileSdk >= 34, so a lower value fails :checkReleaseAarMetadata
 // with 15 AAR metadata errors. Raising the minimum here fixes it for any plugin
 // stuck on an old SDK, without waiting for an upstream release.
-subprojects {
-    afterEvaluate {
-        extensions.findByType(com.android.build.gradle.LibraryExtension::class.java)?.let { lib ->
+//
+// NOTE: must use gradle.projectsEvaluated (fires once after ALL projects are
+// evaluated) instead of subprojects { afterEvaluate }, because the latter throws
+// "Cannot run Project.afterEvaluate ... already evaluated" in this Gradle/Flutter
+// setup.
+gradle.projectsEvaluated {
+    rootProject.subprojects.forEach { project ->
+        project.extensions.findByType(com.android.build.gradle.LibraryExtension::class.java)?.let { lib ->
             if ((lib.compileSdk ?: 0) < 34) {
                 lib.compileSdk = 34
             }
