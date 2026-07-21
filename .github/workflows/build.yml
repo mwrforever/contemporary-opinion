@@ -61,6 +61,19 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Patch flutter_ringtone_player compileSdk to 34
+        run: |
+          PUB_CACHE_DIR=$(dart pub cache directory)
+          echo "Pub cache dir: $PUB_CACHE_DIR"
+          find "$PUB_CACHE_DIR" -path "*flutter_ringtone_player*/android/build.gradle" \
+            -exec sed -i 's/compileSdkVersion 33/compileSdkVersion 34/' {} +
+          MATCHED=$(find "$PUB_CACHE_DIR" -path "*flutter_ringtone_player*/android/build.gradle" -exec grep -l "compileSdkVersion 34" {} \;)
+          if [ -n "$MATCHED" ]; then
+            echo "Patched flutter_ringtone_player compileSdk -> 34"
+          else
+            echo "PATCH MISSED: flutter_ringtone_player build.gradle not patched"; exit 1
+          fi
+
       - name: Build release APK
         run: flutter build apk --release
 
