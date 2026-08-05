@@ -1,6 +1,8 @@
 // TasksTab 交互测试：筛选计数、确认覆盖、勾选完成、滑动删除、选择模式、Speed Dial
 import 'package:daily_planner/models/task.dart';
+import 'package:daily_planner/modules/tasks/task_feedback_card.dart';
 import 'package:daily_planner/modules/tasks/tasks_tab.dart';
+import 'package:daily_planner/modules/tasks/voice_input_screen.dart';
 import 'package:daily_planner/widgets/task_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,5 +119,46 @@ void main() {
     await tester.tap(find.text('手动新增'));
     await tester.pumpAndSettle();
     expect(find.text('新建任务'), findsOneWidget);
+  });
+
+  testWidgets('Speed Dial 语音规划打开语音页', (tester) async {
+    await pumpTab(tester);
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('语音规划'));
+    await tester.pumpAndSettle();
+    expect(find.byType(VoiceInputScreen), findsOneWidget);
+  });
+
+  testWidgets('语音规划全流程：解析→确认→任务列表显示反馈卡', (tester) async {
+    await pumpTab(tester);
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('语音规划'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '明天上午10点开会');
+    await tester.tap(find.text('解析'));
+    await tester.pumpAndSettle();
+    expect(find.text('开会'), findsOneWidget);
+    await tester.tap(find.text('确认添加'));
+    await tester.pumpAndSettle();
+    expect(find.text('已添加 1 条'), findsOneWidget);
+    // 手动关闭反馈卡
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.text('已添加 1 条'), findsNothing);
+  });
+
+  testWidgets('TaskFeedbackCard 渲染摘要与冲突/跳过计数', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: TaskFeedbackCard(
+            result: VoicePlanResult(added: 2, conflict: 1, skipped: 1),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('已添加 2 条 · 1 条冲突待处理 · 跳过 1 条'), findsOneWidget);
   });
 }

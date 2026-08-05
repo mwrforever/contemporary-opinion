@@ -12,6 +12,8 @@ import '../../widgets/filter_tab_bar.dart';
 import '../../widgets/speed_dial.dart';
 import '../../widgets/task_card.dart';
 import 'add_task_screen.dart';
+import 'task_feedback_card.dart';
+import 'voice_input_screen.dart';
 
 /// 任务 Tab（设计稿方向 A）：筛选 Tab + 任务列表 + Speed Dial。
 ///
@@ -34,6 +36,7 @@ class _TasksTabState extends State<TasksTab> {
   _Filter _filter = _Filter.all;
   bool _selectionMode = false;
   final Set<String> _selected = {};
+  VoicePlanResult? _planResult;
 
   @override
   void initState() {
@@ -95,11 +98,17 @@ class _TasksTabState extends State<TasksTab> {
     );
   }
 
-  void _goVoice() {
-    // TODO(phase2): 语音规划于阶段 2 落地，当前给用户明确预期
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('语音规划将在阶段 2 上线')),
+  Future<void> _goVoice() async {
+    final result = await Navigator.of(context).push<VoicePlanResult>(
+      MaterialPageRoute(
+        builder: (_) => VoiceInputScreen(
+          store: widget.store,
+          reminder: widget.reminder,
+        ),
+      ),
     );
+    if (!mounted || result == null) return;
+    setState(() => _planResult = result);
   }
 
   Future<void> _openEdit(Task task) async {
@@ -244,6 +253,14 @@ class _TasksTabState extends State<TasksTab> {
             onSelected: (i) => setState(() => _filter = _Filter.values[i]),
           ),
           const SizedBox(height: 8),
+          if (_planResult != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: TaskFeedbackCard(
+                result: _planResult!,
+                onDismiss: () => setState(() => _planResult = null),
+              ),
+            ),
           Expanded(
             child: visible.isEmpty
                 ? const EmptyState()
