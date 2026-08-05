@@ -52,6 +52,7 @@
 | debug APK 构建 | `[已完成]` | 2026-08-05 产出 `build/app/outputs/flutter-apk/app-debug.apk`；构建链修复：file_picker→file_selector（其 Android 端 Kotlin 1.8.22 与 AGP 9/Gradle 9 不兼容，产物为空 jar）、app compileSdk=37（permission_handler 13 要求）、`kotlin.incremental=false`（规避增量缓存崩溃）、签名块 DSL 修复（`java.util` 被 Gradle `java` 扩展遮蔽）、sqlite3 原生资产下载需本地代理（`HTTPS_PROXY=127.0.0.1:7897`）注入 |
 | 测试基线（更新） | `[已完成]` | 312 通过 / 1 已知遗留失败（`audio_service_test.dart`，Task 14 重写响铃时替换） |
 | 环境遗留 | `[部分完成]` | Android SDK 已配置 `D:\code\envs\android\sdk`（API 37 junction `android-37`→`android-37.0` 已建）；开发人员模式已开启；cmdline-tools 组件缺失（不影响构建，可后补）；maven.google.com 偶发瞬时超时 |
+| Task 6+7 路由守卫与登录/注册页 | `[已完成]` | 已登录直达主框架（三 Tab：任务/记事本占位 + 我的登出）；未登录品牌页 1.2s 后进登录页；登出回登录页；登录/注册表单校验（必填/密码长度/一致性/唯一）；新增 `test/support/fake_auth_service.dart` 解耦 widget 测试与 FFI 异步 |
 
 ---
 

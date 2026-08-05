@@ -1,35 +1,30 @@
 import 'package:flutter/material.dart';
 
-import '../app/tab_shell.dart';
-import '../services/aliyun_asr_service.dart';
-import '../services/aliyun_schedule_service.dart';
-import '../services/notebook_voice_service.dart';
-import '../services/reminder_service.dart';
-import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
+import 'login_page.dart';
 
-/// 启动页（品牌「时说」）：展示品牌标识与主标语，点击进入主界面。
+/// 品牌启动页：仅「未登录首次启动」展示，约 1.2s 后自动进入登录页。
+///
+/// 已登录用户由 AuthGate 直达主界面，不走本页（FEATURES 启动流程约定）。
 class SplashScreen extends StatefulWidget {
-  final ReminderService reminder;
-  final AliyunAsrService asr;
-  final AliyunScheduleService schedule;
-  final NotebookVoiceService notebookVoice;
-  final SettingsService settings;
-
-  const SplashScreen({
-    super.key,
-    required this.reminder,
-    required this.asr,
-    required this.schedule,
-    required this.notebookVoice,
-    required this.settings,
-  });
+  const SplashScreen({super.key});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // 品牌短暂展示后进入登录页
+    Future.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -41,15 +36,27 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             children: [
               const Spacer(flex: 2),
-              _BrandMark(),
+              // 品牌标识：柔和圆底 + 声波图形
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE2F4F1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.graphic_eq_rounded,
+                  size: 44,
+                  color: Color(0xFF0E8C7F),
+                ),
+              ),
               const SizedBox(height: 28),
-              Text(
+              const Text(
                 '时说',
                 style: TextStyle(
                   fontSize: 52,
                   fontWeight: FontWeight.w800,
                   letterSpacing: 4,
-                  color: scheme.onSurface,
                 ),
               ),
               const SizedBox(height: 14),
@@ -73,24 +80,6 @@ class _SplashScreenState extends State<SplashScreen> {
                 ),
               ),
               const Spacer(flex: 3),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => TabShell(
-                        reminder: widget.reminder,
-                        asr: widget.asr,
-                        schedule: widget.schedule,
-                        notebookVoice: widget.notebookVoice,
-                        settings: widget.settings,
-                      ),
-                    ),
-                  ),
-                  child: const Text('开始规划'),
-                ),
-              ),
-              const SizedBox(height: 16),
               Text(
                 '你的时间，不该撞车。',
                 style: TextStyle(
@@ -103,24 +92,6 @@ class _SplashScreenState extends State<SplashScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// 品牌标识：柔和圆底 + 声波图形，呼应「语音规划」的差异化。
-class _BrandMark extends StatelessWidget {
-  const _BrandMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 88,
-      height: 88,
-      decoration: BoxDecoration(
-        color: AppTheme.accentSoft,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(Icons.graphic_eq_rounded, size: 44, color: AppTheme.accent),
     );
   }
 }
