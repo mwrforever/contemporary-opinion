@@ -5,7 +5,7 @@ import 'dart:typed_data';
 /// 浏览器 `ScriptProcessorNode` 给出的原始采样是 Float32（范围约 [-1, 1]），
 /// 且采样率/声道数由浏览器决定（常见 44.1k/48k、双声道）。云端 ASR
 /// （Qwen3-ASR-Flash）需要 PCM16@16k 单声道，因此这里提供重采样、降混与
-/// 量化封装的纯函数，便于单测，并被 `audio_capture_web.dart` 使用。
+/// 量化封装的纯函数，便于单测，并被音频采集 IO 实现使用。
 
 /// 单声道 Float32 样本的线性插值重采样。
 ///
@@ -61,4 +61,28 @@ Float32List mixToMono(List<Float32List> channels) {
     out[i] = sum / channels.length;
   }
   return out;
+}
+
+/// 将 PCM16 小端字节流从 [inRate] 重采样到 [outRate]（单声道）。
+///
+/// 内部经 Int16→Float32→线性插值→Float32→Int16，复用现有工具函数
+/// [resampleFloat32] 与 [float32ToPcm16]。空输入或速率非法返回空；
+/// 输入/输出速率一致时原样返回（避免无谓量化损耗）。
+Uint8List resamplePcm16(Uint8List pcm16, int inRate, int outRate) {
+  if (pcm16.isEmpty || inRate <= 0 || outRate <= 0) return Uint8List(0);
+  if (inRate == outRate) return Uint8List.fromList(pcm16);
+
+  // Int16 小端字节 → Float32List（归一化到 [-1, 1]）
+  final bd = pcm16.buffer.asByteData();
+  final n = pcm16.lengthInBytes ~/ 2;
+  final float = Float32List(n);
+  for (var i = 0; i < n; i++) {
+    final s16 = bd.getInt16(i * 2, Endian.little);
+    float[i] = s16 / (s16 < 0 ? 32768.0 : 32767.0);
+  }
+
+  final resampled = resampleFloat32(float, inRate.toDouble(), outRate.toDouble());
+
+  // Float32 → Int16 小端字节（复用现有量化函数）
+  return float32ToPcm16(resampled);
 }

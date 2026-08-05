@@ -55,6 +55,7 @@
 | Task 6+7 路由守卫与登录/注册页 | `[已完成]` | 已登录直达主框架（三 Tab：任务/记事本占位 + 我的登出）；未登录品牌页 1.2s 后进登录页；登出回登录页；登录/注册表单校验（必填/密码长度/一致性/唯一）；新增 `test/support/fake_auth_service.dart` 解耦 widget 测试与 FFI 异步 |
 | Task 8 设计 Token 落地 | `[已完成]` | `app_theme.dart` 精确色值（accent #0E8C7F 等）、浅深 ColorScheme 显式锁定、文本层级 20/800·16/600·14/400、组件主题（按钮 52/卡片 20/输入框 12/chip 胶囊/导航栏/分段控件）、浅色按钮用 accentStrong 保对比度；`buildAppTheme([Brightness])` |
 | Task 9 旧数据迁移 | `[已完成]` | `LegacyMigrationService` + 冻结 `LegacyTask` 适配器（与旧 TaskAdapter 二进制一致）；升级后首个注册用户（通常 id=1）承接旧任务；幂等标记 `app_meta.legacy_migrated`；失败静默；登录后钩子 `onLoggedIn` 注入（生产默认迁移，测试空实现）；记事本旧数据待阶段 3 建表后迁移 |
+| Task 10 清理 Web/死代码 | `[已完成]` | 删除 `audio_capture_web/audio_service_web/notification_service_web`、`web/` 目录与 `run_web.bat/.sh`、`test/web_adapt_test.dart`；三个能力抽象改为纯 IO 导出；pubspec 移除 `record_web`/`web`（过渡依赖剩余：hive_ce 至 Task 12、speech_to_text 至 Task 15、just_audio 至 Task 14） |
 
 ---
 

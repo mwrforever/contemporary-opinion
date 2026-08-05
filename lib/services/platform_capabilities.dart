@@ -3,7 +3,7 @@
 /// 本文件**不依赖 `dart:html` / Flutter**，便于在 `flutter test`（宿主机原生 VM）
 /// 下被直接单测。真实的浏览器探测（如 `window.isSecureContext`、
 /// `window.navigator.mediaDevices`、`window.Notification`）放在平台实现文件
-/// （`audio_capture_web.dart` / `notification_service_web.dart`）中，调用这里的纯函数
+/// （音频采集 / 通知 IO 实现）中，调用这里的纯函数
 /// 做确定性判定，从而保证「能力 → 是否可用」「不可用 → 降级文案」的逻辑可测、可复用。
 library;
 
