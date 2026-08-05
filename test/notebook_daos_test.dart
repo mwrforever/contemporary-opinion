@@ -3,7 +3,10 @@ import 'package:daily_planner/data/database_helper.dart';
 import 'package:daily_planner/data/daos/notebook_daos.dart';
 import 'package:daily_planner/models/notebook_ledger.dart';
 import 'package:daily_planner/models/notebook_reading.dart';
+import 'package:daily_planner/models/notebook_recipe.dart';
 import 'package:daily_planner/models/notebook_shopping.dart';
+import 'package:daily_planner/models/notebook_study.dart';
+import 'package:daily_planner/models/notebook_trip.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -179,6 +182,158 @@ void main() {
       final updated = (await dao.listByUser(1)).single;
       expect(updated.status, 'done');
       expect(updated.note, '读完');
+      await dao.delete('r1');
+      expect(await dao.listByUser(1), isEmpty);
+    });
+  });
+
+  group('TripDao', () {
+    test('三层级联 round-trip 与 totalCost', () async {
+      final dao = TripDao();
+      final trip = NotebookTrip(
+        id: 't1',
+        title: '杭州三日',
+        city: '杭州',
+        homeCity: '上海',
+        startDate: '2026-08-10',
+        endDate: '2026-08-12',
+        intercityTransport: TripTransport(
+          mode: '高铁',
+          isRoundTrip: true,
+          amount: 73,
+        ),
+        days: [
+          TripDay(
+            date: '2026-08-10',
+            label: 'D1',
+            checkpoints: [
+              TripCheckpoint(
+                name: '西湖',
+                billings: [TripBilling(type: '门票', amount: 0)],
+              ),
+              TripCheckpoint(
+                name: '灵隐寺',
+                transport: TripTransport(mode: '打车', amount: 30),
+                billings: [TripBilling(type: '门票', amount: 45)],
+                done: true,
+                rating: 4,
+              ),
+            ],
+          ),
+        ],
+      );
+      await dao.insert(trip, userId: 1);
+
+      final restored = (await dao.listByUser(1)).single;
+      expect(restored.title, '杭州三日');
+      expect(restored.homeCity, '上海');
+      expect(restored.intercityTransport!.amount, 73);
+      expect(restored.days.single.checkpoints, hasLength(2));
+      final cp = restored.days.single.checkpoints[1];
+      expect(cp.name, '灵隐寺');
+      expect(cp.done, isTrue);
+      expect(cp.rating, 4);
+      expect(cp.transport!.mode, '打车');
+      expect(cp.billings.single.amount, 45);
+      // totalCost = 城际73*2 + 门票45 = 191（打卡点内交通不计入，见模型 getter）
+      expect(restored.totalCost, 191);
+
+      await dao.delete('t1');
+      expect(await dao.listByUser(1), isEmpty);
+    });
+
+    test('user_id 隔离', () async {
+      final dao = TripDao();
+      await dao.insert(
+        NotebookTrip(id: 't1', title: '行程', days: const []),
+        userId: 1,
+      );
+      expect(await dao.listByUser(2), isEmpty);
+    });
+  });
+
+  group('StudyDao', () {
+    test('课程与记录级联 round-trip、更新替换记录', () async {
+      final dao = StudyDao();
+      await dao.insert(
+        NotebookCourse(
+          id: 'c1',
+          title: 'Flutter',
+          status: 'learning',
+          progress: 40,
+          records: [
+            StudyRecord(
+              id: 'r1',
+              title: '状态管理',
+              content: 'Provider',
+              createdAt: DateTime(2026, 8, 1),
+            ),
+            StudyRecord(
+              id: 'r2',
+              title: '路由',
+              content: 'GoRouter',
+              createdAt: DateTime(2026, 8, 2),
+            ),
+          ],
+        ),
+        userId: 1,
+      );
+
+      var course = (await dao.listByUser(1)).single;
+      expect(course.records, hasLength(2));
+      expect(course.records[1].content, 'GoRouter');
+
+      await dao.update(course.copyWith(
+        progress: 80,
+        records: [
+          course.records.first.copyWith(title: '状态管理（复习）'),
+        ],
+      ));
+      course = (await dao.listByUser(1)).single;
+      expect(course.progress, 80);
+      expect(course.records, hasLength(1));
+      expect(course.records.single.title, '状态管理（复习）');
+
+      await dao.delete('c1');
+      expect(await dao.listByUser(1), isEmpty);
+    });
+  });
+
+  group('RecipeDao', () {
+    test('配料/步骤 JSON 列 round-trip', () async {
+      final dao = RecipeDao();
+      await dao.insert(
+        NotebookRecipe(
+          id: 'r1',
+          name: '红烧肉',
+          category: '荤菜',
+          ingredients: const ['五花肉', '冰糖'],
+          steps: const ['焯水', '炖 1 小时'],
+          difficulty: 'hard',
+          rating: 5,
+          note: '外婆菜谱',
+        ),
+        userId: 1,
+      );
+      final restored = (await dao.listByUser(1)).single;
+      expect(restored.ingredients, ['五花肉', '冰糖']);
+      expect(restored.steps, ['焯水', '炖 1 小时']);
+      expect(restored.difficulty, 'hard');
+      expect(restored.note, '外婆菜谱');
+
+      await dao.update(
+        NotebookRecipe(
+          id: 'r1',
+          name: '红烧肉',
+          category: '荤菜',
+          ingredients: const ['五花肉', '冰糖'],
+          steps: const ['焯水', '炖 1 小时'],
+          difficulty: 'hard',
+          rating: 5,
+          note: '已复刻',
+        ),
+      );
+      expect((await dao.listByUser(1)).single.note, '已复刻');
       await dao.delete('r1');
       expect(await dao.listByUser(1), isEmpty);
     });

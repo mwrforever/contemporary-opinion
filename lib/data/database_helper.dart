@@ -177,6 +177,7 @@ class DatabaseHelper {
         user_id INTEGER NOT NULL,
         date TEXT,
         label TEXT,
+        sort INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY(trip_id) REFERENCES trips(id) ON DELETE CASCADE,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
       )''');
@@ -191,6 +192,7 @@ class DatabaseHelper {
         done INTEGER NOT NULL DEFAULT 0,
         rating INTEGER NOT NULL DEFAULT 0,
         note TEXT,
+        sort INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY(day_id) REFERENCES trip_days(id) ON DELETE CASCADE,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
       )''');
