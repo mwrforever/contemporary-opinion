@@ -1,6 +1,7 @@
 // 路由守卫测试：已登录直达主界面、未登录品牌页后进登录页、登出回登录页
 import 'package:daily_planner/app.dart';
 import 'package:daily_planner/data/models/user.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_auth_service.dart';
@@ -47,6 +48,9 @@ void main() {
   });
 
   testWidgets('在「我的」页登出后回到登录页且 session 清空', (tester) async {
+    // 放大视口，让「我的」页列表完整构建（含底部退出按钮）
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final auth = FakeAuthService(user: buildUser());
     await tester.pumpWidget(
       App(

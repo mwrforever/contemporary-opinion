@@ -85,4 +85,21 @@ class AuthService {
     }
     return _userDao.findById(session.userId!);
   }
+
+  /// 更新当前用户资料（昵称/头像路径/默认响铃时长）；未登录时静默跳过。
+  ///
+  /// 传 null 表示保留原值；密码哈希不可经此修改。
+  Future<void> updateProfile({
+    String? nickname,
+    String? avatarPath,
+    int? defaultRingSeconds,
+  }) async {
+    final user = await currentUser();
+    if (user == null) return;
+    await _userDao.update(user.copyWith(
+      nickname: nickname,
+      avatarPath: avatarPath,
+      defaultRingSeconds: defaultRingSeconds,
+    ));
+  }
 }

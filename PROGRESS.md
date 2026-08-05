@@ -60,6 +60,7 @@
 | Task 13 冲突检测回归 | `[已完成]` | 新 Task 模型下 conflict_detector_test 18/18 全绿（规则未变） |
 | Task 14 提醒调度重构 | `[已完成]` | 新增 `ReminderScheduler` 接口 + IO 实现（隔离 flutter_local_notifications 22）；ReminderService 注入化（scheduler/audio/tts），去除 Web 分支；AudioService 引入 `RingPlayer` 抽象并修复历史遗留响铃测试；just_audio 移入主依赖（Java 实现，AGP 9/Gradle 9 兼容，替代 FEATURES 草案 audioplayers）；**全量测试 333/333 全绿（0 失败）** |
 | Task 15 任务页视觉落地 | `[已完成]` | 旧 Hive 任务/记事本 UI 子树整体拆除（TabShell/任务列表/语音页/记事本页与详情/设置页/旧卡片/旧组件 + 10 个旧测试）；新 TasksTab 按设计稿落地（筛选胶囊+角标、五态任务卡、冲突确认覆盖/改时间换资源、滑动删除二次确认、长按选择批量删除、Speed Dial），新 AddTaskScreen 分区表单（指定时间/倒计时、重复自定义星期、过去时间拦截）；MainPage 任务 Tab 接入 SQLite TaskStore + ReminderService；新增 22 个 UI/状态测试；移除 speech_to_text 依赖与 SpeechService 兜底；**全量测试 283/283 全绿** |
+| Task 16 我的页/备份/提醒引导 | `[已完成]` | 新增 `ProfilePage`（昵称/默认响铃编辑、JSON 导出导入、提醒设置入口、退出登录）与 `PermissionGuideScreen`（通知/电池优化/自启动清单 + 去开启）；新增 `BackupService`（导出不含 password_hash、导入容错/格式校验）；`AuthService.updateProfile` 持久化资料；MainPage「我的」Tab 接入；新增 11 个测试；**全量测试 294/294 全绿** |
 
 ---
 

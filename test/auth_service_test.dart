@@ -73,4 +73,13 @@ void main() {
     await auth.logout();
     expect(await auth.currentUser(), isNull);
   });
+
+  test('updateProfile：昵称与默认响铃时长持久化', () async {
+    final auth = AuthService();
+    await auth.register(username: 'xiaoxu', password: 'mima123456');
+    await auth.updateProfile(nickname: '新昵称', defaultRingSeconds: 30);
+    final user = await auth.currentUser();
+    expect(user!.nickname, '新昵称');
+    expect(user.defaultRingSeconds, 30);
+  });
 }

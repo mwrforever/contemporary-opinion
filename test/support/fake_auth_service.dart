@@ -45,4 +45,19 @@ class FakeAuthService extends AuthService {
 
   @override
   Future<void> logout() async => loggedInUser = null;
+
+  @override
+  Future<void> updateProfile({
+    String? nickname,
+    String? avatarPath,
+    int? defaultRingSeconds,
+  }) async {
+    final user = loggedInUser;
+    if (user == null) return;
+    loggedInUser = user.copyWith(
+      nickname: nickname,
+      avatarPath: avatarPath,
+      defaultRingSeconds: defaultRingSeconds,
+    );
+  }
 }
