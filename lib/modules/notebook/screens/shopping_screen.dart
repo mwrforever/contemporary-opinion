@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../models/notebook_shopping.dart';
 import '../../../services/notebook_store.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../widgets/notebook_report.dart';
 
 /// 购物清单页：子购物车分组 + 购物项，聚合项数/预期/实付/差额。
 class ShoppingScreen extends StatefulWidget {
@@ -185,7 +186,27 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('购物清单')),
+      appBar: AppBar(
+        title: const Text('购物清单'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: '消费趋势',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ReportScreen(
+                  title: '购物消费趋势',
+                  unit: '¥',
+                  data: [
+                    for (final i in widget.store.shopping)
+                      ReportDatum(date: i.date, value: i.actualPrice),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _addCart,
         child: const Icon(Icons.add),

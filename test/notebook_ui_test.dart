@@ -10,6 +10,7 @@ import 'package:daily_planner/modules/notebook/screens/recipe_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/shopping_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/study_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/trip_screen.dart';
+import 'package:daily_planner/modules/notebook/widgets/notebook_report.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -152,5 +153,44 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
     await tester.pumpAndSettle();
     expect(store.recipes.single.ingredients, ['五花肉']);
+  });
+
+  testWidgets('收支报表入口打开并渲染', (tester) async {
+    await store.addLedger(
+      NotebookLedger(
+        id: 'l1',
+        title: '工资',
+        kind: 'income',
+        amount: 12000,
+        category: '',
+        date: '2026-08-01',
+        note: '',
+      ),
+    );
+    await pump(tester, LedgerScreen(store: store));
+    await tester.tap(find.byIcon(Icons.bar_chart));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReportScreen), findsOneWidget);
+    expect(find.text('收支报表'), findsWidgets);
+  });
+
+  testWidgets('购物报表入口打开并渲染', (tester) async {
+    await store.addShopping(
+      NotebookShopping(
+        id: 'i1',
+        item: '牛奶',
+        expectedPrice: 10,
+        actualPrice: 9.5,
+        category: '',
+        note: '',
+        cartId: '',
+        date: '2026-08-01',
+        createdAt: DateTime(2026, 8, 1),
+      ),
+    );
+    await pump(tester, ShoppingScreen(store: store));
+    await tester.tap(find.byIcon(Icons.bar_chart));
+    await tester.pumpAndSettle();
+    expect(find.byType(ReportScreen), findsOneWidget);
   });
 }

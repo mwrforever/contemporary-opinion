@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../models/notebook_ledger.dart';
 import '../../../services/notebook_store.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../widgets/notebook_report.dart';
 
 /// 收支账本页：收入/支出/结余汇总 + 明细增删改。
 class LedgerScreen extends StatefulWidget {
@@ -119,7 +120,27 @@ class _LedgerScreenState extends State<LedgerScreen> {
     final expense = list.where((l) => l.kind == 'expense').fold<num>(0, (s, l) => s + l.amount);
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('收支账本')),
+      appBar: AppBar(
+        title: const Text('收支账本'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bar_chart),
+            tooltip: '收支报表',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ReportScreen(
+                  title: '收支报表',
+                  unit: '¥',
+                  data: [
+                    for (final l in widget.store.ledger)
+                      ReportDatum(date: l.date, value: l.amount, kind: l.kind),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _edit(null),
         child: const Icon(Icons.add),
