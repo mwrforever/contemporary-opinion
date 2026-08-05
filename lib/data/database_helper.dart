@@ -69,7 +69,7 @@ class DatabaseHelper {
       )''');
     await db.execute('''
       CREATE TABLE tasks(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT PRIMARY KEY,
         user_id INTEGER NOT NULL,
         title TEXT NOT NULL,
         scheduled_time TEXT,

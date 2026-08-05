@@ -1,17 +1,22 @@
 import 'package:flutter/foundation.dart';
-import 'package:hive/hive.dart';
 
+import '../data/daos/task_dao.dart';
 import '../models/task.dart';
 import 'conflict_detector.dart';
 
-/// 任务仓储：封装 Hive 读写并对外暴露为 ChangeNotifier（Provider）。
+/// 任务仓储：基于 SQLite（TaskDao）并对外暴露为 ChangeNotifier（Provider）。
+///
+/// [userId] 归属当前登录用户；所有写操作先落库再更新内存并 notifyListeners。
 class TaskStore extends ChangeNotifier {
-  static const String _boxName = 'tasks';
-  late Box<Task> _box;
+  TaskStore({TaskDao? dao, this.userId = 1}) : _dao = dao ?? TaskDao();
+
+  final TaskDao _dao;
+  final int userId;
+  List<Task> _tasks = [];
 
   /// 全部任务，按触发时间升序；无时间的排最后。
   List<Task> get all {
-    final list = _box.values.toList();
+    final list = List<Task>.from(_tasks);
     list.sort((a, b) {
       final ta = a.scheduledTime;
       final tb = b.scheduledTime;
@@ -36,25 +41,33 @@ class TaskStore extends ChangeNotifier {
         .toList();
   }
 
+  /// 从数据库加载当前用户任务
   Future<void> init() async {
-    _box = await Hive.openBox<Task>(_boxName);
+    _tasks = await _dao.listByUser(userId);
     notifyListeners();
   }
 
-  Task? getById(String id) => _box.get(id);
+  Task? getById(String id) {
+    for (final t in _tasks) {
+      if (t.id == id) return t;
+    }
+    return null;
+  }
 
   Future<void> add(Task task) async {
-    await _box.put(task.id, task);
+    await _dao.insert(task, userId: userId);
+    _tasks.add(task);
     notifyListeners();
   }
 
   Future<void> update(Task task) async {
-    await task.save();
-    notifyListeners();
+    await _dao.update(task);
+    _replace(task);
   }
 
   Future<void> delete(Task task) async {
-    await task.delete();
+    await _dao.delete(task.id);
+    _tasks.removeWhere((t) => t.id == task.id);
     notifyListeners();
   }
 
@@ -68,9 +81,8 @@ class TaskStore extends ChangeNotifier {
   /// [toggleDone] 的核心逻辑（可注入 [now]，便于测试）。
   Future<void> toggleDoneAt(Task task, DateTime now) async {
     if (task.isRepeating) {
-      // 完成「今天这一次」：种子滚动到「当前发生之后的下一次」（数据保持未来时刻，
-      // 干净且通知仍由 matchDateTimeComponents 重发），状态保持 pending；
-      // 同时记录 completedAt=now 供视觉层显示「今日已完成」，次日跨日自动恢复。
+      // 完成「今天这一次」：种子滚动到下一次发生，状态保持 pending，
+      // 记录 completedAt 供视觉层显示「今日已完成」，次日跨日自动恢复。
       final cur = task.nextOccurrence(now);
       if (cur != null) {
         task.scheduledTime =
@@ -85,13 +97,13 @@ class TaskStore extends ChangeNotifier {
       task.status = TaskStatus.done;
       task.completedAt = now;
     }
-    await task.save();
-    notifyListeners();
+    await _dao.update(task);
+    _replace(task);
   }
 
   /// 标记一次性任务为"已错过"（仅在未完成的过期任务上调用）。
   ///
-  /// 重复任务**跳过**：其自身按天/周滚动，不应被标 missed（否则语义混乱且影响排序）。
+  /// 重复任务**跳过**：其自身按天/周滚动，不应被标 missed。
   Future<void> markMissedIfNeeded() async {
     await markMissedIfNeededAt(DateTime.now());
   }
@@ -99,13 +111,13 @@ class TaskStore extends ChangeNotifier {
   /// [markMissedIfNeeded] 的核心逻辑（可注入 [now]，便于测试）。
   Future<void> markMissedIfNeededAt(DateTime now) async {
     var changed = false;
-    for (final t in all) {
+    for (final t in _tasks) {
       if (t.isRepeating) continue; // 重复任务永不被标 missed
       if (t.status == TaskStatus.pending &&
           t.scheduledTime != null &&
           t.scheduledTime!.isBefore(now)) {
         t.status = TaskStatus.missed;
-        await t.save();
+        await _dao.update(t);
         changed = true;
       }
     }
@@ -129,14 +141,25 @@ class TaskStore extends ChangeNotifier {
     final result =
         ConflictDetector.detect(task, others, referenceNow: now);
     ConflictDetector.applyDecision(task, result);
-    await task.save();
-    notifyListeners();
+    await _dao.update(task);
+    _replace(task);
   }
 
   /// 用户确认覆盖既有冲突任务，强制生效。
   Future<void> resolveOverride(Task task) async {
     ConflictDetector.confirmOverride(task);
-    await task.save();
+    await _dao.update(task);
+    _replace(task);
+  }
+
+  /// 用最新实例替换内存中的同名任务并通知监听者
+  void _replace(Task task) {
+    final index = _tasks.indexWhere((t) => t.id == task.id);
+    if (index >= 0) {
+      _tasks[index] = task;
+    } else {
+      _tasks.add(task);
+    }
     notifyListeners();
   }
 }
