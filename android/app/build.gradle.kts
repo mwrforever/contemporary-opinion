@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -6,7 +8,8 @@ plugins {
 
 android {
     namespace = "com.dailyplanner.daily_planner"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler 13 / 新插件要求 SDK 37+，显式指定（向后兼容低版本设备）
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -33,10 +36,9 @@ android {
         create("release") {
             val keyPropsFile = rootProject.file("key.properties")
             if (keyPropsFile.exists()) {
-                val keyProps =
-                    java.util.Properties().apply {
-                        keyPropsFile.inputStream().use { load(it) }
-                    }
+                val keyProps = Properties().apply {
+                    keyPropsFile.inputStream().use { load(it) }
+                }
                 storeFile = file(keyProps.getProperty("storeFile"))
                 storePassword = keyProps.getProperty("storePassword")
                 keyAlias = keyProps.getProperty("keyAlias")
