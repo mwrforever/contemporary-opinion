@@ -75,6 +75,13 @@ class NotebookStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updateShopping(NotebookShopping item) async {
+    await _shopping.updateItem(item);
+    final i = _shoppingItems.indexWhere((x) => x.id == item.id);
+    if (i >= 0) _shoppingItems[i] = item;
+    notifyListeners();
+  }
+
   Future<void> addCart(NotebookShoppingCart cart) async {
     await _shopping.insertCart(cart, userId: userId);
     _carts.add(cart);

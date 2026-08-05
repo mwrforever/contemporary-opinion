@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../modules/notebook/notebook_tab.dart';
 import '../modules/tasks/tasks_tab.dart';
 import '../services/auth_service.dart';
 import '../services/backup_service.dart';
+import '../services/notebook_store.dart';
 import '../services/reminder_service.dart';
 import '../services/task_store.dart';
-import '../widgets/empty_state.dart';
 import 'profile_page.dart';
 
 /// 主界面：三 Tab 外壳（任务 / 记事本 / 我的），对应设计稿底部导航。
@@ -19,12 +20,14 @@ class MainPage extends StatefulWidget {
     this.userId = 1,
     this.taskStore,
     this.reminder,
+    this.notebookStore,
   });
 
   final AuthService? authService;
   final int userId;
   final TaskStore? taskStore;
   final ReminderService? reminder;
+  final NotebookStore? notebookStore;
 
   @override
   State<MainPage> createState() => _MainPageState();
@@ -36,6 +39,8 @@ class _MainPageState extends State<MainPage> {
       widget.taskStore ?? TaskStore(userId: widget.userId);
   late final ReminderService _reminder =
       widget.reminder ?? ReminderService();
+  late final NotebookStore _notebook =
+      widget.notebookStore ?? NotebookStore(userId: widget.userId);
   int _index = 0;
 
   @override
@@ -45,11 +50,7 @@ class _MainPageState extends State<MainPage> {
         index: _index,
         children: [
           TasksTab(store: _store, reminder: _reminder),
-          // TODO(phase3-notebook): 记事本六子功能 Hub（阶段 3 引入）
-          Scaffold(
-            appBar: AppBar(title: const Text('记事本')),
-            body: EmptyState(),
-          ),
+          NotebookTab(store: _notebook),
           ProfilePage(
             auth: _auth,
             backup: BackupService(),
