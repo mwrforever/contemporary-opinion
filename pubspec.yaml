@@ -67,10 +67,9 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   # 纯 Dart / CI 环境运行 sqflite 测试
   sqflite_common_ffi: ^2.4.2
-  # TODO(phase1): 过渡期旧代码引用解析用；hive_ce(至 Task 12)、speech_to_text(至 Task 15)、just_audio(至 Task 14)
+  # TODO(phase3/16): 过渡期引用解析用；hive_ce/hive_ce_flutter 待阶段 3 记事本与 Task 16 用户设置迁 SQLite 后移除
   hive_ce: ^2.19.0
   hive_ce_flutter: ^2.3.0
-  speech_to_text: ^7.0.0
 
 flutter:
   uses-material-design: true

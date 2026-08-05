@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../data/models/user.dart';
+import '../modules/tasks/tasks_tab.dart';
 import '../services/auth_service.dart';
+import '../services/reminder_service.dart';
+import '../services/task_store.dart';
 import '../widgets/empty_state.dart';
 import 'login_page.dart';
 
@@ -12,8 +15,17 @@ import 'login_page.dart';
 /// 「我的」先提供登出（完整资料页见 Task 16）。
 class MainPage extends StatefulWidget {
   final AuthService? authService;
+  final int userId;
+  final TaskStore? taskStore;
+  final ReminderService? reminder;
 
-  const MainPage({super.key, this.authService});
+  const MainPage({
+    super.key,
+    this.authService,
+    this.userId = 1,
+    this.taskStore,
+    this.reminder,
+  });
 
   @override
   State<MainPage> createState() => _MainPageState();
@@ -21,6 +33,10 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage> {
   late final AuthService _auth = widget.authService ?? AuthService();
+  late final TaskStore _store =
+      widget.taskStore ?? TaskStore(userId: widget.userId);
+  late final ReminderService _reminder =
+      widget.reminder ?? ReminderService();
   int _index = 0;
 
   @override
@@ -29,11 +45,7 @@ class _MainPageState extends State<MainPage> {
       body: IndexedStack(
         index: _index,
         children: [
-          // TODO(phase1-tasks): 接入 SQLite TaskStore 任务列表（Task 12/15），计划于阶段 1 末引入
-          Scaffold(
-            appBar: AppBar(title: const Text('任务')),
-            body: EmptyState(),
-          ),
+          TasksTab(store: _store, reminder: _reminder),
           // TODO(phase3-notebook): 记事本六子功能 Hub（阶段 3 引入）
           Scaffold(
             appBar: AppBar(title: const Text('记事本')),

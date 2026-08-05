@@ -6,7 +6,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart'
 import '../models/task.dart';
 import 'audio_service.dart';
 import 'reminder_scheduler.dart';
-import 'settings_service.dart';
 import 'task_store.dart';
 import 'tts_service.dart';
 
@@ -18,10 +17,10 @@ import 'tts_service.dart';
 /// 依赖 [ReminderScheduler]/[AudioService]/[TtsService] 均可注入，便于单元测试。
 class ReminderService {
   ReminderService({
-    this.settings,
     ReminderScheduler? scheduler,
     AudioService? audio,
     TtsService? tts,
+    this.enableInAppTimers = true,
   })  : _scheduler = scheduler ?? ReminderSchedulerIo(),
         audio = audio ?? AudioService(),
         tts = tts ?? TtsService();
@@ -30,11 +29,12 @@ class ReminderService {
   final AudioService audio;
   final TtsService tts;
 
+  /// 应用存活期 Timer 响铃开关；无头/测试环境可关闭
+  final bool enableInAppTimers;
+
   final Map<String, Timer> _timers = {};
   final Set<String> _alertStopFlags = {};
   TaskStore? _store;
-
-  final SettingsService? settings;
 
   /// 语音提醒循环总时长：到点后语音播报循环播放，直至该时长结束。
   static const Duration _voiceLoopTotal = Duration(seconds: 10);
@@ -157,6 +157,7 @@ class ReminderService {
 
   /// 应用存活时用 Timer 触发响铃 + 播报，重复任务到点后续约。
   void _scheduleInAppTimer(Task task) {
+    if (!enableInAppTimers) return;
     _timers[task.id]?.cancel();
     final when = _nextFire(task);
     if (when == null) return;

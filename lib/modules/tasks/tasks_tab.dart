@@ -1,301 +1,310 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../models/task.dart';
-import '../../theme/app_theme.dart';
-import '../../theme/task_status_style.dart';
-import '../../services/aliyun_asr_service.dart';
-import '../../services/aliyun_schedule_service.dart';
 import '../../services/reminder_service.dart';
-import '../../services/settings_service.dart';
 import '../../services/task_store.dart';
-import '../../screens/settings_screen.dart';
+import '../../theme/task_status_style.dart';
+import '../../widgets/confirm_dialog.dart';
+import '../../widgets/empty_state.dart';
+import '../../widgets/filter_tab_bar.dart';
 import '../../widgets/speed_dial.dart';
-import '../../widgets/task_feedback_card.dart';
+import '../../widgets/task_card.dart';
 import 'add_task_screen.dart';
-import 'task_list.dart';
-import 'voice_input_screen.dart';
 
-/// 任务 Tab：当日概览 + 时间分组列表 + 居中滑动筛选 + Speed Dial。
+/// 任务 Tab（设计稿方向 A）：筛选 Tab + 任务列表 + Speed Dial。
 ///
-/// 由 [HomeScreen] 重组而来，仅调整目录归属与依赖引用，逻辑保持不变。
+/// 数据来自 SQLite [TaskStore]；提醒经 [ReminderService] 编排。
+/// 交互：勾选完成（重复任务完成今天滚动）、滑动删除二次确认、
+/// 长按进入选择模式批量删除、冲突卡确认覆盖/改时间换资源。
 class TasksTab extends StatefulWidget {
-  final ReminderService reminder;
-  final AliyunAsrService asr;
-  final AliyunScheduleService schedule;
-  final SettingsService settings;
+  const TasksTab({super.key, required this.store, required this.reminder});
 
-  const TasksTab({
-    super.key,
-    required this.reminder,
-    required this.asr,
-    required this.schedule,
-    required this.settings,
-  });
+  final TaskStore store;
+  final ReminderService reminder;
 
   @override
   State<TasksTab> createState() => _TasksTabState();
 }
 
+enum _Filter { all, active, overdue, conflict, inProgress, done }
+
 class _TasksTabState extends State<TasksTab> {
-  TaskFilter _filter = TaskFilter.all;
-  bool _fabOpen = false;
+  _Filter _filter = _Filter.all;
   bool _selectionMode = false;
   final Set<String> _selected = {};
 
-  List<Task> _sortedFiltered(TaskStore store) {
-    final list = switch (_filter) {
-      TaskFilter.active => store.all.where(isActionableTask).toList(),
-      TaskFilter.overdue => store.all.where(isOverdueTask).toList(),
-      TaskFilter.conflict =>
-        store.all.where((t) => t.hasPendingConflict).toList(),
-      TaskFilter.all => List<Task>.from(store.all),
+  @override
+  void initState() {
+    super.initState();
+    widget.store.addListener(_onStoreChanged);
+    // 加载 SQLite 任务；失败静默，空态兜底
+    unawaited(_safe(widget.store.init()));
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(_onStoreChanged);
+    super.dispose();
+  }
+
+  void _onStoreChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 提醒/存储的插件调用在测试或未初始化环境下失败时静默，不打断交互
+  Future<void> _safe(Future<void> future) async {
+    try {
+      await future;
+    } catch (_) {}
+  }
+
+  List<Task> _visible() {
+    final all = widget.store.all;
+    return switch (_filter) {
+      _Filter.all => all,
+      _Filter.active => all.where(isActionableTask).toList(),
+      _Filter.overdue => all.where(isOverdueTask).toList(),
+      _Filter.conflict => all.where((t) => t.hasPendingConflict).toList(),
+      _Filter.inProgress => all.where(isInProgressTask).toList(),
+      _Filter.done => all.where((t) => t.isDone).toList(),
     };
-    list.sort((a, b) {
-      final ta = a.scheduledTime;
-      final tb = b.scheduledTime;
-      if (ta == null && tb == null) return a.title.compareTo(b.title);
-      if (ta == null) return 1;
-      if (tb == null) return -1;
-      return ta.compareTo(tb);
-    });
-    return list;
   }
 
-  void _goAdd() {
-    setState(() => _fabOpen = false);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) =>
-            AddTaskScreen(reminder: widget.reminder, settings: widget.settings),
-      ),
-    );
+  int _count(_Filter filter) {
+    final all = widget.store.all;
+    return switch (filter) {
+      _Filter.all => all.length,
+      _Filter.active => all.where(isActionableTask).length,
+      _Filter.overdue => all.where(isOverdueTask).length,
+      _Filter.conflict => all.where((t) => t.hasPendingConflict).length,
+      _Filter.inProgress => all.where(isInProgressTask).length,
+      _Filter.done => all.where((t) => t.isDone).length,
+    };
   }
 
-  /// 进入语音规划页；待其 `pop` 回传结果（{'added':n,'conflict':k}），
-  /// 用 [TaskFeedbackCard] 展示成功反馈（解决屏内 SnackBar 不可见问题）。
-  Future<void> _goVoice() async {
-    setState(() => _fabOpen = false);
-    final result = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => VoiceInputScreen(
-          store: context.read<TaskStore>(),
-          reminder: widget.reminder,
-          asr: widget.asr,
-          schedule: widget.schedule,
-        ),
-      ),
-    );
-    if (result is Map && result['added'] != null) {
-      final added = result['added'] as int;
-      final conflict = (result['conflict'] as int? ?? 0);
-      final message = conflict > 0
-          ? '已添加 $added 个任务，其中 $conflict 项存在冲突、待处理后生效'
-          : '已添加 $added 个任务';
-      TaskFeedbackCard.show(
-        context,
-        type: FeedbackType.success,
-        message: message,
-        duration: const Duration(seconds: 3),
-      );
-    }
-  }
-
-  Future<void> _toggle(Task task, TaskStore store) async {
-    await store.toggleDone(task);
-    await widget.reminder.notifyTaskChanged(task);
-  }
-
-  /// 删除任务：取消提醒调度并直接删除，不提供撤销、不弹提示。
-  Future<void> _delete(Task task, TaskStore store) async {
-    await widget.reminder.cancelTask(task);
-    await store.delete(task);
-  }
-
-  void _goEdit(Task task) {
-    Navigator.of(context).push(
+  Future<void> _goAdd() async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AddTaskScreen(
+          store: widget.store,
           reminder: widget.reminder,
-          settings: widget.settings,
-          task: task,
         ),
       ),
     );
   }
 
-  /// 进入选择模式并选中指定任务。
-  void _enterSelection(Task t) {
-    setState(() {
-      _selectionMode = true;
-      _selected.add(t.id);
-    });
+  void _goVoice() {
+    // TODO(phase2): 语音规划于阶段 2 落地，当前给用户明确预期
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('语音规划将在阶段 2 上线')),
+    );
   }
 
-  /// 切换指定任务的选中态（选择模式下点击卡片触发）。
-  void _toggleSelect(Task t) {
-    setState(() {
-      if (_selected.contains(t.id)) {
-        _selected.remove(t.id);
-      } else {
-        _selected.add(t.id);
-      }
-    });
-  }
-
-  /// 退出选择模式并清空选中集合。
-  void _exitSelection() {
-    setState(() {
-      _selectionMode = false;
-      _selected.clear();
-    });
-  }
-
-  /// 批量删除选中任务：先取消提醒调度再直接删除，不提供撤销、不弹提示。
-  Future<void> _deleteSelected(TaskStore store) async {
-    final removed = store.all.where((t) => _selected.contains(t.id)).toList();
-    for (final t in removed) {
-      await widget.reminder.cancelTask(t);
-      await store.delete(t);
-    }
-    setState(() {
-      _selected.clear();
-      _selectionMode = false;
-    });
-  }
-
-  /// 滑动删除二次确认：返回 [bool] 决定是否放行删除。
-  /// 取消 → 卡片自动回弹不删；确认 → 触发 [TaskCard.onDismissed]（= _deleteWithUndo）。
-  Future<bool> _confirmDelete(Task task) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('确定删除该任务？'),
-        content: const Text('删除后无法撤销，确定删除该任务？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(
-              '删除',
-              style: TextStyle(color: AppTheme.danger),
-            ),
-          ),
-        ],
+  Future<void> _openEdit(Task task) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AddTaskScreen(
+          store: widget.store,
+          reminder: widget.reminder,
+          editTask: task,
+        ),
       ),
     );
-    return confirmed ?? false;
+  }
+
+  Future<void> _toggleDone(Task task) async {
+    await _safe(widget.store.toggleDone(task));
+    await _safe(widget.reminder.notifyTaskChanged(task));
+  }
+
+  Future<void> _confirmOverride(Task task) async {
+    await _safe(widget.store.resolveOverride(task));
+    await _safe(widget.reminder.notifyTaskChanged(task));
+  }
+
+  /// 执行删除（滑动删除已在 confirmDismiss 中确认过，不再二次弹框）
+  Future<void> _executeDelete(Task task) async {
+    await _safe(widget.store.delete(task));
+    await _safe(widget.reminder.cancelTask(task));
+  }
+
+  Future<void> _deleteSelected() async {
+    final ok = await ConfirmDialog.show(
+      context,
+      '批量删除',
+      '将删除已选 ${_selected.length} 个任务，确定吗？',
+      '删除',
+    );
+    if (!ok || !mounted) return;
+    for (final id in List<String>.of(_selected)) {
+      final task = widget.store.getById(id);
+      if (task == null) continue;
+      await _safe(widget.store.delete(task));
+      await _safe(widget.reminder.cancelTask(task));
+    }
+    setState(() {
+      _selectionMode = false;
+      _selected.clear();
+    });
+  }
+
+  void _enterSelection(String id) {
+    setState(() {
+      _selectionMode = true;
+      _selected.add(id);
+    });
+  }
+
+  void _toggleSelect(String id) {
+    setState(() {
+      if (!_selected.add(id)) _selected.remove(id);
+    });
+  }
+
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 6) return '夜深了';
+    if (hour < 12) return '早上好';
+    if (hour < 18) return '下午好';
+    return '晚上好';
+  }
+
+  String _dateLabel() {
+    final now = DateTime.now();
+    const week = ['一', '二', '三', '四', '五', '六', '日'];
+    return '${now.month}月${now.day}日 周${week[now.weekday - 1]}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final items = [
+      FilterTabItem(label: '全部', count: _count(_Filter.all)),
+      FilterTabItem(label: '待办', count: _count(_Filter.active)),
+      FilterTabItem(label: '进行中', count: _count(_Filter.inProgress)),
+      FilterTabItem(label: '逾期', count: _count(_Filter.overdue)),
+      FilterTabItem(label: '冲突', count: _count(_Filter.conflict)),
+      FilterTabItem(label: '已完成', count: _count(_Filter.done)),
+    ];
+    final index = _Filter.values.indexOf(_filter);
+    final visible = _visible();
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_selectionMode ? '已选 ${_selected.length} 项' : '今日规划'),
-        actions: [
-          if (_selectionMode) ...[
-            IconButton(
-              icon: const Icon(Icons.close),
-              tooltip: '取消',
-              onPressed: _exitSelection,
+      appBar: _selectionMode
+          ? AppBar(
+              title: Text('已选 ${_selected.length}'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: _deleteSelected,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => setState(() {
+                    _selectionMode = false;
+                    _selected.clear();
+                  }),
+                ),
+              ],
+            )
+          : AppBar(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_greeting()}，小许',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Text(_dateLabel(), style: const TextStyle(fontSize: 20)),
+                ],
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.notifications_none),
+                  onPressed: () {},
+                ),
+                IconButton(
+                  icon: const Icon(Icons.person_outline),
+                  onPressed: () {},
+                ),
+              ],
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: '删除选中',
-              onPressed: _selected.isEmpty
-                  ? null
-                  : () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (dialogCtx) => AlertDialog(
-                          title: const Text('删除选中任务'),
-                          content: Text(
-                            '确定删除选中的 ${_selected.length} 项任务吗？删除后无法撤销。',
+      body: Column(
+        children: [
+          const SizedBox(height: 4),
+          FilterTabBar(
+            items: items,
+            selectedIndex: index,
+            onSelected: (i) => setState(() => _filter = _Filter.values[i]),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: visible.isEmpty
+                ? const EmptyState()
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 88),
+                    itemCount: visible.length,
+                    itemBuilder: (context, i) {
+                      final task = visible[i];
+                      final selected = _selected.contains(task.id);
+                      return Dismissible(
+                        key: ValueKey('task-${task.id}'),
+                        direction: _selectionMode
+                            ? DismissDirection.none
+                            : DismissDirection.endToStart,
+                        confirmDismiss: (_) => _selectionMode
+                            ? Future.value(false)
+                            : _confirmDeleteDialog(task),
+                        onDismissed: (_) => _executeDelete(task),
+                        background: Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 5,
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.of(dialogCtx).pop(false),
-                              child: const Text('取消'),
-                            ),
-                            TextButton(
-                              onPressed: () =>
-                                  Navigator.of(dialogCtx).pop(true),
-                              child: const Text(
-                                '删除',
-                                style: TextStyle(color: AppTheme.danger),
-                              ),
-                            ),
-                          ],
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 24),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.error,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Icon(Icons.delete_outline,
+                              color: Colors.white),
+                        ),
+                        child: TaskCard(
+                          task: task,
+                          selectionMode: _selectionMode,
+                          selected: selected,
+                          onToggleDone: () => _toggleDone(task),
+                          onConfirmOverride: () => _confirmOverride(task),
+                          onEdit: () => _openEdit(task),
+                          onLongPress: () => _enterSelection(task.id),
+                          onTap: _selectionMode
+                              ? () => _toggleSelect(task.id)
+                              : null,
                         ),
                       );
-                      if (confirmed == true) {
-                        final store = context.read<TaskStore>();
-                        await _deleteSelected(store);
-                      }
                     },
-            ),
-          ] else
-            IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: '设置',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => SettingsScreen(settings: widget.settings),
-                ),
-              ),
-            ),
+                  ),
+          ),
         ],
       ),
-      body: Consumer<TaskStore>(
-        builder: (context, store, _) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              FilterTabBar(
-                filter: _filter,
-                onChanged: (f) => setState(() => _filter = f),
-                total: store.all.length,
-                active: store.all.where(isActionableTask).length,
-                conflict: store.all.where((t) => t.hasPendingConflict).length,
-                overdue: store.all.where(isOverdueTask).length,
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: TaskList(
-                  key: ValueKey(_filter),
-                  filter: _filter,
-                  tasks: _sortedFiltered(store),
-                  onAdd: _goAdd,
-                  onVoice: _goVoice,
-                  onTap: _goEdit,
-                  onToggle: (t) => _toggle(t, store),
-                  onDelete: (t) => _delete(t, store),
-                  onResolve: (t) async {
-                    await store.resolveOverride(t);
-                    await widget.reminder.notifyTaskChanged(t);
-                  },
-                  selectionMode: _selectionMode,
-                  selectedIds: _selected,
-                  onLongPress: _enterSelection,
-                  onSelect: _toggleSelect,
-                  confirmDismiss: (t) => _confirmDelete(t),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-      floatingActionButton: SpeedDial(
-        open: _fabOpen,
-        onToggle: () => setState(() => _fabOpen = !_fabOpen),
-        onAdd: _goAdd,
-        onVoice: _goVoice,
-      ),
+      floatingActionButton: SpeedDial(onManual: _goAdd, onVoice: _goVoice),
     );
+  }
+
+  Future<bool> _confirmDeleteDialog(Task task) async {
+    final ok = await ConfirmDialog.show(
+      context,
+      '删除任务',
+      '「${task.title}」删除后不可恢复，确定删除吗？',
+      '删除',
+    );
+    return ok;
   }
 }

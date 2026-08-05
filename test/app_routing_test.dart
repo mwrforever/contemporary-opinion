@@ -4,6 +4,7 @@ import 'package:daily_planner/data/models/user.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_auth_service.dart';
+import 'support/fakes.dart';
 
 void main() {
   User buildUser() => User(
@@ -19,6 +20,8 @@ void main() {
       App(
         authService: FakeAuthService(user: buildUser()),
         onLoggedIn: (_) async {},
+        taskStore: FakeTaskStore(),
+        reminder: buildFakeReminder(),
       ),
     );
     await tester.pumpAndSettle();
@@ -28,7 +31,12 @@ void main() {
 
   testWidgets('未登录用户先见品牌页，约 1.2s 后进入登录页', (tester) async {
     await tester.pumpWidget(
-      App(authService: FakeAuthService(), onLoggedIn: (_) async {}),
+      App(
+        authService: FakeAuthService(),
+        onLoggedIn: (_) async {},
+        taskStore: FakeTaskStore(),
+        reminder: buildFakeReminder(),
+      ),
     );
     await tester.pump();
     expect(find.text('时说'), findsOneWidget);
@@ -40,7 +48,14 @@ void main() {
 
   testWidgets('在「我的」页登出后回到登录页且 session 清空', (tester) async {
     final auth = FakeAuthService(user: buildUser());
-    await tester.pumpWidget(App(authService: auth, onLoggedIn: (_) async {}));
+    await tester.pumpWidget(
+      App(
+        authService: auth,
+        onLoggedIn: (_) async {},
+        taskStore: FakeTaskStore(),
+        reminder: buildFakeReminder(),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
