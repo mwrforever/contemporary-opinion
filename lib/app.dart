@@ -6,6 +6,7 @@ import 'screens/main_page.dart';
 import 'screens/splash_screen.dart';
 import 'services/auth_service.dart';
 import 'services/legacy_migration.dart';
+import 'services/legacy_notebook_migration.dart';
 import 'services/reminder_service.dart';
 import 'services/task_store.dart';
 import 'theme/app_theme.dart';
@@ -16,6 +17,7 @@ typedef LoggedInHook = Future<void> Function(int userId);
 /// 默认钩子：尽力迁移旧版 Hive 任务数据（幂等，失败静默）。
 Future<void> _migrateLegacyData(int userId) async {
   await LegacyMigrationService().migrate(userId: userId);
+  await LegacyNotebookMigration().migrate(userId);
 }
 
 /// 应用根组件：全局主题 + 路由守卫。
