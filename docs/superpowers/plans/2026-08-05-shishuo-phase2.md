@@ -12,7 +12,7 @@
 
 - 纯移动端；注释/日志/SnackBar 中文；TDD 先写失败测试。
 - 语音四态视觉与设计稿一致（冲突红框三操作 / 待定黄框设时间 / 弱提醒黄字 / 已过去红框跳过）。
-- 无云端 Key（`AliyunConfig.dashscopeApiKey` 为空）时：ASR 不可用 → 预览页提供「文本输入」入口，走本地 `NlpParser`；不调用设备端 speech_to_text（FEATURES 已移除）。
+- 无云端 Key（`AliyunConfig.dashscopeApiKey` 为空）时：**App 不做录音/ASR**，语音页退化为文本输入框——用户手写，或经系统输入法自带语音转文字把话说进输入框；随后走本地 `NlpParser` 解析。不调用设备端 speech_to_text（FEATURES 已移除）。
 - `RECORD_AUDIO` 权限首次请求（permission_handler 13）；拒绝时引导设置。
 - 核心链路（映射/冲突四态/权限）测试覆盖目标 100%；UI ≥80%。
 
@@ -78,10 +78,11 @@ class VoiceInputScreen extends StatefulWidget {
 ```
 - 依赖全部可注入（`AliyunAsrService?` / `AliyunScheduleService?` / `AudioCapture?` / `NlpParser` 静态）；无 key 时隐藏录音、显示文本输入框。
 - 流程：录音（AudioCapture.startStream → stop 收 PCM）→ `asr.transcribe` → `schedule.schedule`（失败或空结果回退 `NlpParser.parse`）→ 每候选 `ConflictDetector.detect` + `applyDecision` 得四态。
-- 四态卡：冲突（红框 + 确认覆盖/改时间/换资源）/ 待定（黄框 + 设时间 → 复用 AddTaskScreen 补时间）/ 弱提醒（黄字正常生效）/ 已过去（红框 + 保存跳过）。
+- 四态卡：冲突（红框 + 确认覆盖/改时间/换资源）/ 待定（黄框 + 设时间）/ 弱提醒（黄字正常生效）/ 已过去（红框 + 保存跳过）。
+  - 「改时间 / 换资源 / 设时间」= 打开阶段 1 的 `AddTaskScreen` 编辑表单手动修改（**非语音操作**）。
 - 底部：`添加 N 条 · 跳过 M 条` + 确认添加（已跳过的不入库；冲突待处理需用户先三选一或保持未添加）。
 
-- [ ] 测试：四态判定（用注入的假 schedule/parser 返回固定候选）；文本输入离线路径（NLP）；无 key 隐藏录音；确认添加计数与 store 落库；跳过计数。
+- [ ] 测试：四态判定（用注入的假 schedule/parser 返回固定候选）；离线路径为文本输入框（用户手写或系统输入法语音转文字）走 NLP；无 key 不显示录音按钮；确认添加计数与 store 落库；跳过计数。
 - [ ] 实现（UI 按设计稿方向 A）。
 - [ ] Commit: `feat: 语音规划页（录音/转写/排期/四态预览）`
 
