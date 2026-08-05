@@ -41,6 +41,18 @@
 
 ---
 
+## 三、阶段 1 重构快照（2026-08-05 起，分支 feat/phase1-core）
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| Task 1 依赖重排 | `[已完成]` | 锁最新稳定版（sqflite 2.4.3 / flutter_local_notifications 22.2.0 / permission_handler 13.0.0 / audioplayers 6.8.1 / record 7.1.1 等）；win32 ^5/^6 传递冲突 → share_plus 12.x、package_info_plus 9.x 兼容线 |
+| Android 平台配置 | `[已完成]` | 开启 core library desugaring；权限：RECORD_AUDIO / POST_NOTIFICATIONS / SCHEDULE_EXACT_ALARM / WAKE_LOCK / VIBRATE |
+| 测试基线 | `[已完成]` | 292 通过；11 项旧 aliyun ASR 转写测试因 record 7.x 升级失效，按计划删除（阶段 2 语音重写） |
+| flutter analyze | `⚠️ 0 error / 51 info` | info 主要为过渡期 dev 依赖提示（hive/web/speech/just_audio，Task 10 清理）与存量风格项 |
+| 环境遗留 | `[待处理]` | ① Android SDK 未找到（Android Studio 安装路径/盘符待确认，或 SDK 组件未下载）；② Windows 开发人员模式未开启（flutter pub get 需其创建插件符号链接；已用 dart pub get 绕过，构建 APK 前需开启） |
+
+---
+
 ## 三、待办与阻塞项
 
 | 编号 | 任务名称 | 优先级 | 状态 | 阻塞 / 说明 |

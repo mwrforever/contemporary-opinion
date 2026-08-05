@@ -12,6 +12,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications 22.x 需要 core library desugaring
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -25,13 +27,37 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    // 发布签名：CI/本地存在 android/key.properties 时用正式签名；否则回退 debug 签名，
+    // 保证 `flutter build apk --release` 在无密钥时也能产出可安装的 APK。
+    signingConfigs {
+        create("release") {
+            val keyPropsFile = rootProject.file("key.properties")
+            if (keyPropsFile.exists()) {
+                val keyProps =
+                    java.util.Properties().apply {
+                        keyPropsFile.inputStream().use { load(it) }
+                    }
+                storeFile = file(keyProps.getProperty("storeFile"))
+                storePassword = keyProps.getProperty("storePassword")
+                keyAlias = keyProps.getProperty("keyAlias")
+                keyPassword = keyProps.getProperty("keyPassword")
+            } else {
+                initWith(signingConfigs.getByName("debug"))
+            }
         }
     }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 kotlin {
