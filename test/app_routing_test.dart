@@ -16,7 +16,10 @@ void main() {
 
   testWidgets('已登录用户启动直达主界面，不展示品牌页', (tester) async {
     await tester.pumpWidget(
-      App(authService: FakeAuthService(user: buildUser())),
+      App(
+        authService: FakeAuthService(user: buildUser()),
+        onLoggedIn: (_) async {},
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('任务'), findsWidgets);
@@ -24,7 +27,9 @@ void main() {
   });
 
   testWidgets('未登录用户先见品牌页，约 1.2s 后进入登录页', (tester) async {
-    await tester.pumpWidget(App(authService: FakeAuthService()));
+    await tester.pumpWidget(
+      App(authService: FakeAuthService(), onLoggedIn: (_) async {}),
+    );
     await tester.pump();
     expect(find.text('时说'), findsOneWidget);
     // 推进品牌展示计时器
@@ -35,7 +40,7 @@ void main() {
 
   testWidgets('在「我的」页登出后回到登录页且 session 清空', (tester) async {
     final auth = FakeAuthService(user: buildUser());
-    await tester.pumpWidget(App(authService: auth));
+    await tester.pumpWidget(App(authService: auth, onLoggedIn: (_) async {}));
     await tester.pumpAndSettle();
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();

@@ -53,6 +53,8 @@
 | 测试基线（更新） | `[已完成]` | 312 通过 / 1 已知遗留失败（`audio_service_test.dart`，Task 14 重写响铃时替换） |
 | 环境遗留 | `[部分完成]` | Android SDK 已配置 `D:\code\envs\android\sdk`（API 37 junction `android-37`→`android-37.0` 已建）；开发人员模式已开启；cmdline-tools 组件缺失（不影响构建，可后补）；maven.google.com 偶发瞬时超时 |
 | Task 6+7 路由守卫与登录/注册页 | `[已完成]` | 已登录直达主框架（三 Tab：任务/记事本占位 + 我的登出）；未登录品牌页 1.2s 后进登录页；登出回登录页；登录/注册表单校验（必填/密码长度/一致性/唯一）；新增 `test/support/fake_auth_service.dart` 解耦 widget 测试与 FFI 异步 |
+| Task 8 设计 Token 落地 | `[已完成]` | `app_theme.dart` 精确色值（accent #0E8C7F 等）、浅深 ColorScheme 显式锁定、文本层级 20/800·16/600·14/400、组件主题（按钮 52/卡片 20/输入框 12/chip 胶囊/导航栏/分段控件）、浅色按钮用 accentStrong 保对比度；`buildAppTheme([Brightness])` |
+| Task 9 旧数据迁移 | `[已完成]` | `LegacyMigrationService` + 冻结 `LegacyTask` 适配器（与旧 TaskAdapter 二进制一致）；升级后首个注册用户（通常 id=1）承接旧任务；幂等标记 `app_meta.legacy_migrated`；失败静默；登录后钩子 `onLoggedIn` 注入（生产默认迁移，测试空实现）；记事本旧数据待阶段 3 建表后迁移 |
 
 ---
 
