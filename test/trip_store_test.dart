@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 用于验证「打卡点变更后经 updateTrip 持久化」的数据流（T04 R3），
 /// 避免 headless 环境下初始化 Hive 盒子。
 class FakeNotebookStore extends NotebookStore {
+  FakeNotebookStore() : super(userId: 1);
+
   final Map<String, Map<String, dynamic>> _trips = {};
 
   @override
