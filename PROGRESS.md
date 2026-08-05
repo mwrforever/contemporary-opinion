@@ -57,6 +57,8 @@
 | Task 9 旧数据迁移 | `[已完成]` | `LegacyMigrationService` + 冻结 `LegacyTask` 适配器（与旧 TaskAdapter 二进制一致）；升级后首个注册用户（通常 id=1）承接旧任务；幂等标记 `app_meta.legacy_migrated`；失败静默；登录后钩子 `onLoggedIn` 注入（生产默认迁移，测试空实现）；记事本旧数据待阶段 3 建表后迁移 |
 | Task 10 清理 Web/死代码 | `[已完成]` | 删除 `audio_capture_web/audio_service_web/notification_service_web`、`web/` 目录与 `run_web.bat/.sh`、`test/web_adapt_test.dart`；三个能力抽象改为纯 IO 导出；pubspec 移除 `record_web`/`web`（过渡依赖剩余：hive_ce 至 Task 12、speech_to_text 至 Task 15、just_audio 至 Task 14） |
 | Task 11+12 Task 模型/DAO/Store 迁移 SQLite | `[已完成]` | Task 去 Hive（纯 Dart + toMap/fromMap，id 保持 UUID，tasks.id 改 TEXT 主键）；新增 `TaskDao`（user_id 隔离/状态/生效过滤）；`TaskStore` 换 SQLite 实现且对外方法签名不变；删除 Hive 适配器两个旧测试；task_test 移除 Hive round-trip、改由 task_model/task_dao/task_store 新测覆盖 |
+| Task 13 冲突检测回归 | `[已完成]` | 新 Task 模型下 conflict_detector_test 18/18 全绿（规则未变） |
+| Task 14 提醒调度重构 | `[已完成]` | 新增 `ReminderScheduler` 接口 + IO 实现（隔离 flutter_local_notifications 22）；ReminderService 注入化（scheduler/audio/tts），去除 Web 分支；AudioService 引入 `RingPlayer` 抽象并修复历史遗留响铃测试；just_audio 移入主依赖（Java 实现，AGP 9/Gradle 9 兼容，替代 FEATURES 草案 audioplayers）；**全量测试 333/333 全绿（0 失败）** |
 
 ---
 
