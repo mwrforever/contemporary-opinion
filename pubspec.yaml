@@ -52,6 +52,10 @@ dependencies:
   # 密码哈希 PBKDF2-HMAC-SHA256（自实现，基于官方 crypto）
   crypto: ^3.0.7
 
+  # 旧版数据迁移运行时依赖（任务/记事本）；待所有用户完成迁移后移除
+  hive_ce: ^2.19.0
+  hive_ce_flutter: ^2.3.0
+
   # 工具
   intl: ^0.20.3
   uuid: ^4.6.0
@@ -67,9 +71,6 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   # 纯 Dart / CI 环境运行 sqflite 测试
   sqflite_common_ffi: ^2.4.2
-  # TODO(phase3/16): 过渡期引用解析用；hive_ce/hive_ce_flutter 待阶段 3 记事本与 Task 16 用户设置迁 SQLite 后移除
-  hive_ce: ^2.19.0
-  hive_ce_flutter: ^2.3.0
 
 flutter:
   uses-material-design: true
