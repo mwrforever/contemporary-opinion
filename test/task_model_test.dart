@@ -22,6 +22,7 @@ void main() {
       effective: true,
       durationMinutes: 90,
       ringSeconds: 30,
+      note: '语音备注',
     );
 
     final restored = Task.fromMap(original.toMap(userId: 1));
@@ -42,6 +43,7 @@ void main() {
     expect(restored.effective, isTrue);
     expect(restored.durationMinutes, 90);
     expect(restored.ringSeconds, 30);
+    expect(restored.note, '语音备注');
   });
 
   test('toMap 携带 user_id 且 effective 转 0/1、weekdays 为 JSON 数组', () {

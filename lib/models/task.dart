@@ -53,6 +53,7 @@ class Task {
     this.effective = true,
     this.durationMinutes = 0,
     this.ringSeconds,
+    this.note,
   });
 
   final String id;
@@ -94,6 +95,9 @@ class Task {
 
   /// 响铃时长（秒）。为 null 时回退到全局默认设置。
   int? ringSeconds;
+
+  /// 备注（语音解析的 note 字段，可选）。
+  String? note;
 
   bool get isRepeating =>
       repeat == RepeatType.daily ||
@@ -180,7 +184,7 @@ class Task {
         'effective': effective ? 1 : 0,
         'notification_id': notificationId,
         'completed_at': completedAt?.toIso8601String(),
-        'note': null,
+        'note': note,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -204,6 +208,7 @@ class Task {
         effective: (map['effective'] as int? ?? 1) == 1,
         durationMinutes: map['duration_minutes'] as int? ?? 0,
         ringSeconds: map['ring_seconds'] as int?,
+        note: map['note'] as String?,
       );
 
   static DateTime? _parseDate(dynamic value) =>
