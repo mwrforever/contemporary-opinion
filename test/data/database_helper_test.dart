@@ -89,4 +89,39 @@ void main() {
       throwsA(isA<DatabaseException>()),
     );
   });
+
+  test('v2 建库包含记事本十张表', () async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.query(
+      'sqlite_master',
+      where:
+          "type='table' AND name IN ('shopping_carts','shopping_items','ledger','reading','trips','trip_days','trip_checkpoints','courses','study_records','recipes')",
+    );
+    expect(rows.length, 10);
+  });
+
+  test('shopping_items 删除购物车后 cart_id 置空（未分组回收）', () async {
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('users', {
+      'username': 'u1',
+      'password_hash': 'hash',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    await db.insert('shopping_carts', {
+      'id': 'cart-1',
+      'user_id': 1,
+      'name': '超市',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    await db.insert('shopping_items', {
+      'id': 'item-1',
+      'user_id': 1,
+      'cart_id': 'cart-1',
+      'item': '牛奶',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    await db.delete('shopping_carts', where: 'id = ?', whereArgs: ['cart-1']);
+    final rows = await db.query('shopping_items');
+    expect(rows.single['cart_id'], isNull);
+  });
 }

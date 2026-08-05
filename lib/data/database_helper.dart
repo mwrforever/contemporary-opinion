@@ -19,7 +19,7 @@ class DatabaseHelper {
   static String? _pathOverride;
 
   static const _dbName = 'daily_planner.db';
-  static const _dbVersion = 1;
+  static const _dbVersion = 2;
 
   Database? _db;
 
@@ -91,11 +91,150 @@ class DatabaseHelper {
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
       )''');
     await db.execute('CREATE INDEX idx_tasks_user ON tasks(user_id, status)');
+    await _createNotebookTables(db);
   }
 
   /// 版本迁移入口：v2 起追加记事本六表（购物/账本/读书/旅游/学习/菜谱）
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // TODO(phase3): 记事本六表迁移，计划于阶段 3 引入
+    if (oldVersion < 2) {
+      await _createNotebookTables(db);
+    }
+  }
+
+  /// 记事本十张表（FEATURES 4.1）：购物 2 / 账本 1 / 读书 1 / 旅游 3 / 学习 2 / 菜谱 1。
+  /// 嵌套结构（交通/计费/配料/步骤）以 TEXT JSON 列存储；id 为客户端 UUID。
+  Future<void> _createNotebookTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE shopping_carts(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE shopping_items(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        cart_id TEXT,
+        item TEXT NOT NULL,
+        expected_price REAL,
+        actual_price REAL,
+        category TEXT,
+        note TEXT,
+        date TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(cart_id) REFERENCES shopping_carts(id) ON DELETE SET NULL
+      )''');
+    await db.execute('''
+      CREATE TABLE ledger(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category TEXT,
+        date TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE reading(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        author TEXT,
+        status TEXT NOT NULL,
+        rating INTEGER NOT NULL DEFAULT 0,
+        category TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE trips(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        city TEXT,
+        home_city TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        intercity_transport TEXT,
+        hotel TEXT,
+        transports TEXT,
+        total_cost REAL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE trip_days(
+        id TEXT PRIMARY KEY,
+        trip_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        date TEXT,
+        label TEXT,
+        FOREIGN KEY(trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE trip_checkpoints(
+        id TEXT PRIMARY KEY,
+        day_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        transport TEXT,
+        billings TEXT,
+        done INTEGER NOT NULL DEFAULT 0,
+        rating INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
+        FOREIGN KEY(day_id) REFERENCES trip_days(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE courses(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        source TEXT,
+        status TEXT NOT NULL,
+        progress INTEGER NOT NULL DEFAULT 0,
+        rating INTEGER NOT NULL DEFAULT 0,
+        category TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE study_records(
+        id TEXT PRIMARY KEY,
+        course_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT,
+        rating INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
+    await db.execute('''
+      CREATE TABLE recipes(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        category TEXT,
+        ingredients TEXT,
+        steps TEXT,
+        difficulty TEXT NOT NULL,
+        rating INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
   }
 
   Future<void> close() async {
