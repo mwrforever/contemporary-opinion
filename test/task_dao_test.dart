@@ -78,4 +78,19 @@ void main() {
     await dao.delete('a');
     expect(await dao.findById('a'), isNull);
   });
+
+  test('listByUser 按创建时间降序返回（新任务在前）', () async {
+    final dao = TaskDao();
+    Task make(String id, DateTime created) => Task(
+          id: id,
+          title: id,
+          scheduledTime: DateTime(2026, 8, 5, 9),
+          createdAt: created,
+          notificationId: 1,
+        );
+    await dao.insert(make('老', DateTime(2026, 8, 1)), userId: 1);
+    await dao.insert(make('新', DateTime(2026, 8, 5)), userId: 1);
+    final rows = await dao.listByUser(1);
+    expect(rows.map((t) => t.id), ['新', '老']);
+  });
 }

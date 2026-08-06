@@ -19,6 +19,11 @@ class TtsService {
     await _tts.speak(text);
   }
 
+  /// 设置播报音量（0.0-1.0），用于用户提醒音量设置。
+  Future<void> setVolume(double volume) async {
+    await _tts.setVolume(volume.clamp(0.0, 1.0));
+  }
+
   /// 朗读并**等待本次播报完成**后返回（用于「每条语音播完再间隔 2 秒」的循环提醒）。
   /// 通过 FlutterTts 的 completion handler 感知播报结束；设置 [maxWait] 兜底，
   /// 防止个别平台 completion 不回调导致无限等待。

@@ -236,3 +236,29 @@ flutter build web --release   # 产物在 build/web，可托管 / CloudStudio �
 - **设计令牌纪律**：全部新/改 UI 复用 `AppTheme`（accent/accentSoft/danger/radius/space/elevation），未自创配色/圆角/阴影；枚举取值与日期格式 `yyyy-MM-dd` 严格对齐 `assets/prompts/notebook_voice_trip.yaml` 与 §7 约定。
 - **相对导入深度**：`lib/modules/notebook/screens/*` 与 `widgets/*` 引用 `lib/` 顶层用 `../../../`，同目录用 `./`/`../`，已正确（无 `../../` 不足坑）。
 - **实现说明**：`FilterTabBar` 自持 `TabController`（随生命周期创建/释放，更内聚；与类图中 FilterTabBar 组合 TabController 一致），而非由 `TasksTab` 持有——属类图契约内的合理实现选择。`ConfirmDialog` 统一封装破坏性确认，T02 清空与 T04 删除打卡点均复用。
+
+---
+
+## 八、阶段 4 任务模块整改快照（2026-08-06）
+
+> 依据已批准设计稿 `design/ui-mockup-task-v2/index.html` + 实施计划 `docs/superpowers/plans/2026-08-06-task-module-fix.md`。
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| 数据层 v3 迁移 | `[已完成]` | tasks 表新增 trigger_type/freq_type/freq_interval/end_at/interval_seconds/max_repeats/repeat_count/next_fire_time/prev_fire_time；旧数据归位（repeat→trigger_type、missed→pending）；新增 user_settings 表（提醒方式/震动/音量） |
+| 状态收敛 | `[已完成]` | Tab 由 6 收敛为 4：全部/进行中/冲突/已完成；移除待办、逾期与 missed 状态；冲突不进进行中；已完成只展示死任务（一次性完成/倒计时重复达上限） |
+| 排序口径 | `[已完成]` | 所有列表按创建时间降序（DAO + Store + Fake 替身同步） |
+| 任务卡片 V2 | `[已完成]` | 状态图标打头、标题/元信息单行省略；冲突仅行内标记；长按进入选择模式 |
+| 详情抽屉 | `[已完成]` | 点记录进可编辑表单（时间/时长/资源/响铃 + 倒计时间隔/次数），冲突原因卡（确认覆盖/改时间换资源），单一「完成」按钮保存自动返回；完成操作收进详情 |
+| 批量删除 | `[已完成]` | 底部「删除（N）/ 取消」双按钮，移除右上角图标 |
+| 语音规划浮层 | `[已完成]` | 同页底部浮层不跳转；打字 + 录音追加光标处；单层环停止键 + 耳朵音波动效；排期结果同浮层展示冲突标记；逐条保存容错（修复多任务只保存一个） |
+| 倒计时重复 | `[已完成]` | DELAYED 型：interval_seconds × max_repeats + repeat_count；手动新建（倒计时模式重复次数）与 LLM 解析（interval_seconds/max_repeats）双通道打通 |
+| 铃铛提醒方式 | `[已完成]` | 静音/语音互斥 + 震动独立开关 + 音量滑杆，持久化 user_settings |
+| 提醒链路修复 | `[已完成]` | **根因：ReminderService.init/scheduleAll 从未被调用**；MainPage 登录后接线 init+reloadSettings+scheduleAll；静音不播报、音量作用于 TTS |
+| 验证 | `[已完成]` | `flutter analyze` 0 error（仅存量 info/警告）；`flutter test` **327/327 全绿**；删除因改动失效的旧测试（task_test、旧任务卡/筛选/语音页用例） |
+
+### 遗留（下一轮）
+- LLM 多任务“只保存一个”已做逐条容错 + 解析回归测试加固；真机再验证实际转写→排期→入库链路。
+- 到点语音提醒已补齐初始化接线；真机验证厂商后台保活矩阵（电池优化/自启动）。
+- 提醒音量作用于 TTS 播报；系统通知铃声音量由系统设置控制（Android 通知渠道）。
+- 记事本购物车 / 我的模块（导入导出确认、权限状态展示、深色模式三档）待按同一流程推进。

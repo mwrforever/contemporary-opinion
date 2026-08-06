@@ -36,6 +36,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   DateTime _date = DateTime.now();
   TimeOfDay _time = TimeOfDay.now();
   int _countdownMinutes = 30;
+  int _countdownRepeats = 1;
   RepeatType _repeat = RepeatType.none;
   final Set<int> _weekdays = {};
 
@@ -51,6 +52,12 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         ? '${t.durationMinutes}'
         : '';
     _ringController.text = t?.ringSeconds?.toString() ?? '';
+    if (t?.isDelayed == true) {
+      // 倒计时重复任务：编辑时还原为倒计时模式 + 间隔/次数
+      _useCountdown = true;
+      _countdownMinutes = (t!.intervalSeconds ?? 0) ~/ 60;
+      _countdownRepeats = t.maxRepeats ?? 1;
+    }
     if (t?.scheduledTime != null) {
       _date = t!.scheduledTime!;
       _time = TimeOfDay.fromDateTime(t.scheduledTime!);
@@ -105,6 +112,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
     final duration = int.tryParse(_durationController.text) ?? 0;
     final ring = int.tryParse(_ringController.text);
+    final repeats = _useCountdown ? _countdownRepeats : 1;
+    final isDelayedCountdown = _useCountdown && repeats > 1;
     final resource =
         _resourceController.text.trim().isEmpty
             ? null
@@ -129,6 +138,10 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         title: _title.text.trim(),
         scheduledTime: when,
         countdownMinutes: _useCountdown ? _countdownMinutes : null,
+        triggerType: isDelayedCountdown ? TriggerType.delayed : null,
+        intervalSeconds: isDelayedCountdown ? _countdownMinutes * 60 : null,
+        maxRepeats: isDelayedCountdown ? repeats : null,
+        nextFireTime: isDelayedCountdown ? when : null,
         repeat: _repeat,
         customWeekdays: _repeat == RepeatType.custom
             ? (_weekdays.toList()..sort())
@@ -178,20 +191,40 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               ),
               const SizedBox(height: 12),
               if (_useCountdown)
-                TextFormField(
-                  initialValue: '$_countdownMinutes',
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: '倒计时（分钟）',
-                    suffixText: '分钟后提醒',
-                  ),
-                  validator: (v) {
-                    final n = int.tryParse(v ?? '');
-                    if (n == null || n <= 0) return '请输入大于 0 的分钟数';
-                    return null;
-                  },
-                  onChanged: (v) =>
-                      _countdownMinutes = int.tryParse(v) ?? _countdownMinutes,
+                Column(
+                  children: [
+                    TextFormField(
+                      initialValue: '$_countdownMinutes',
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '每隔（分钟）',
+                        suffixText: '分钟提醒一次',
+                      ),
+                      validator: (v) {
+                        final n = int.tryParse(v ?? '');
+                        if (n == null || n <= 0) return '请输入大于 0 的分钟数';
+                        return null;
+                      },
+                      onChanged: (v) =>
+                          _countdownMinutes = int.tryParse(v) ?? _countdownMinutes,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      initialValue: '$_countdownRepeats',
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '重复次数',
+                        helperText: '1 表示仅提醒一次；大于 1 按间隔重复',
+                      ),
+                      validator: (v) {
+                        final n = int.tryParse(v ?? '');
+                        if (n == null || n <= 0) return '请输入大于 0 的次数';
+                        return null;
+                      },
+                      onChanged: (v) =>
+                          _countdownRepeats = int.tryParse(v) ?? _countdownRepeats,
+                    ),
+                  ],
                 )
               else ...[
                 Row(

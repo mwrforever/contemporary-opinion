@@ -16,14 +16,7 @@ class FakeTaskStore extends TaskStore {
 
   @override
   List<Task> get all => List.of(_tasks)
-    ..sort((a, b) {
-      final ta = a.scheduledTime;
-      final tb = b.scheduledTime;
-      if (ta == null && tb == null) return 0;
-      if (ta == null) return 1;
-      if (tb == null) return -1;
-      return ta.compareTo(tb);
-    });
+    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   @override
   Future<void> init() async {}

@@ -19,7 +19,7 @@ class DatabaseHelper {
   static String? _pathOverride;
 
   static const _dbName = 'daily_planner.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 3;
 
   Database? _db;
 
@@ -88,17 +88,69 @@ class DatabaseHelper {
         completed_at TEXT,
         note TEXT,
         created_at TEXT NOT NULL,
+        trigger_type TEXT NOT NULL DEFAULT 'once',
+        freq_type TEXT,
+        freq_interval INTEGER NOT NULL DEFAULT 1,
+        end_at TEXT,
+        interval_seconds INTEGER,
+        max_repeats INTEGER,
+        repeat_count INTEGER NOT NULL DEFAULT 0,
+        next_fire_time TEXT,
+        prev_fire_time TEXT,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
       )''');
     await db.execute('CREATE INDEX idx_tasks_user ON tasks(user_id, status)');
+    await _createUserSettingsTable(db);
     await _createNotebookTables(db);
   }
 
-  /// 版本迁移入口：v2 起追加记事本六表（购物/账本/读书/旅游/学习/菜谱）
+  /// 版本迁移入口：v2 追加记事本六表；v3 演进任务调度字段 + 用户提醒设置。
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _createNotebookTables(db);
     }
+    if (oldVersion < 3) {
+      await _upgradeV3(db);
+    }
+  }
+
+  /// v3 迁移：任务表对齐统一调度表（task_schedule）关键字段，
+  /// 并将旧数据归位（repeat→trigger_type/freq_type、missed→pending）。
+  Future<void> _upgradeV3(Database db) async {
+    await db.execute(
+        "ALTER TABLE tasks ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'once'");
+    await db.execute('ALTER TABLE tasks ADD COLUMN freq_type TEXT');
+    await db.execute(
+        'ALTER TABLE tasks ADD COLUMN freq_interval INTEGER NOT NULL DEFAULT 1');
+    await db.execute('ALTER TABLE tasks ADD COLUMN end_at TEXT');
+    await db.execute('ALTER TABLE tasks ADD COLUMN interval_seconds INTEGER');
+    await db.execute('ALTER TABLE tasks ADD COLUMN max_repeats INTEGER');
+    await db.execute(
+        'ALTER TABLE tasks ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 0');
+    await db.execute('ALTER TABLE tasks ADD COLUMN next_fire_time TEXT');
+    await db.execute('ALTER TABLE tasks ADD COLUMN prev_fire_time TEXT');
+    // 旧数据归位：有重复方式的按日历周期重复（RECURRING），一次性保持 ONCE
+    await db.execute(
+        "UPDATE tasks SET trigger_type = 'recurring' WHERE repeat != 'none'");
+    await db.execute(
+        "UPDATE tasks SET freq_type = 'day' WHERE repeat = 'daily'");
+    await db.execute(
+        "UPDATE tasks SET freq_type = 'week' WHERE repeat IN ('weekly','weekdays','custom')");
+    // 逾期状态已移除：历史 missed 统一归为 pending
+    await db.execute("UPDATE tasks SET status = 'pending' WHERE status = 'missed'");
+    await _createUserSettingsTable(db);
+  }
+
+  /// 用户提醒设置表：铃铛浮层（静音/震动/语音 + 音量）的持久化位置。
+  Future<void> _createUserSettingsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_settings(
+        user_id INTEGER PRIMARY KEY,
+        reminder_mode TEXT NOT NULL DEFAULT 'voice',
+        vibrate INTEGER NOT NULL DEFAULT 1,
+        reminder_volume INTEGER NOT NULL DEFAULT 60,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      )''');
   }
 
   /// 记事本十张表（FEATURES 4.1）：购物 2 / 账本 1 / 读书 1 / 旅游 3 / 学习 2 / 菜谱 1。

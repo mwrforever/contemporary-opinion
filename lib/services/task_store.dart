@@ -14,17 +14,10 @@ class TaskStore extends ChangeNotifier {
   final int userId;
   List<Task> _tasks = [];
 
-  /// 全部任务，按触发时间升序；无时间的排最后。
+  /// 全部任务，按创建时间降序（新任务在前，冒烟整改口径）。
   List<Task> get all {
     final list = List<Task>.from(_tasks);
-    list.sort((a, b) {
-      final ta = a.scheduledTime;
-      final tb = b.scheduledTime;
-      if (ta == null && tb == null) return a.createdAt.compareTo(b.createdAt);
-      if (ta == null) return 1;
-      if (tb == null) return -1;
-      return ta.compareTo(tb);
-    });
+    list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return list;
   }
 
@@ -80,7 +73,22 @@ class TaskStore extends ChangeNotifier {
 
   /// [toggleDone] 的核心逻辑（可注入 [now]，便于测试）。
   Future<void> toggleDoneAt(Task task, DateTime now) async {
-    if (task.isRepeating) {
+    if (task.isDelayed) {
+      // 倒计时重复：完成本次后推进次数；达到上限则任务完成（死任务），否则继续下一次
+      task.prevFireTime = task.scheduledTime == null
+          ? null
+          : task.scheduledTime!.add(
+              Duration(seconds: task.intervalSeconds ?? 0) * task.repeatCount);
+      task.repeatCount += 1;
+      if (task.maxRepeats != null && task.repeatCount >= task.maxRepeats!) {
+        task.status = TaskStatus.done;
+        task.completedAt = now;
+      } else {
+        task.status = TaskStatus.pending;
+        task.completedAt = now;
+      }
+      task.nextFireTime = task.nextFireFor(now);
+    } else if (task.isRepeating) {
       // 完成「今天这一次」：种子滚动到下一次发生，状态保持 pending，
       // 记录 completedAt 供视觉层显示「今日已完成」，次日跨日自动恢复。
       final cur = task.nextOccurrence(now);
@@ -99,29 +107,6 @@ class TaskStore extends ChangeNotifier {
     }
     await _dao.update(task);
     _replace(task);
-  }
-
-  /// 标记一次性任务为"已错过"（仅在未完成的过期任务上调用）。
-  ///
-  /// 重复任务**跳过**：其自身按天/周滚动，不应被标 missed。
-  Future<void> markMissedIfNeeded() async {
-    await markMissedIfNeededAt(DateTime.now());
-  }
-
-  /// [markMissedIfNeeded] 的核心逻辑（可注入 [now]，便于测试）。
-  Future<void> markMissedIfNeededAt(DateTime now) async {
-    var changed = false;
-    for (final t in _tasks) {
-      if (t.isRepeating) continue; // 重复任务永不被标 missed
-      if (t.status == TaskStatus.pending &&
-          t.scheduledTime != null &&
-          t.scheduledTime!.isBefore(now)) {
-        t.status = TaskStatus.missed;
-        await _dao.update(t);
-        changed = true;
-      }
-    }
-    if (changed) notifyListeners();
   }
 
   /// 新增任务并自动做冲突检测：

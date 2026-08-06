@@ -23,6 +23,15 @@ void main() {
       durationMinutes: 90,
       ringSeconds: 30,
       note: '语音备注',
+      triggerType: TriggerType.recurring,
+      freqType: FreqType.week,
+      freqInterval: 2,
+      endAt: DateTime(2026, 12, 31),
+      intervalSeconds: 1800,
+      maxRepeats: 5,
+      repeatCount: 2,
+      nextFireTime: DateTime(2026, 8, 6, 14, 30),
+      prevFireTime: DateTime(2026, 8, 6, 14, 0),
     );
 
     final restored = Task.fromMap(original.toMap(userId: 1));
@@ -44,6 +53,15 @@ void main() {
     expect(restored.durationMinutes, 90);
     expect(restored.ringSeconds, 30);
     expect(restored.note, '语音备注');
+    expect(restored.triggerType, TriggerType.recurring);
+    expect(restored.freqType, FreqType.week);
+    expect(restored.freqInterval, 2);
+    expect(restored.endAt, DateTime(2026, 12, 31));
+    expect(restored.intervalSeconds, 1800);
+    expect(restored.maxRepeats, 5);
+    expect(restored.repeatCount, 2);
+    expect(restored.nextFireTime, DateTime(2026, 8, 6, 14, 30));
+    expect(restored.prevFireTime, DateTime(2026, 8, 6, 14, 0));
   });
 
   test('toMap 携带 user_id 且 effective 转 0/1、weekdays 为 JSON 数组', () {
@@ -78,5 +96,55 @@ void main() {
     expect(task.effective, isTrue);
     expect(task.durationMinutes, 0);
     expect(task.customWeekdays, isEmpty);
+    expect(task.triggerType, TriggerType.once);
+    expect(task.freqType, isNull);
+    expect(task.freqInterval, 1);
+    expect(task.repeatCount, 0);
+  });
+
+  test('fromMap 兼容旧数据：missed 归 pending、重复任务推导 recurring', () {
+    final task = Task.fromMap({
+      'id': 't-old',
+      'title': '旧数据',
+      'created_at': '2026-08-05T00:00:00.000',
+      'status': 'missed',
+      'repeat': 'daily',
+    });
+    expect(task.status, TaskStatus.pending);
+    expect(task.triggerType, TriggerType.recurring);
+    expect(task.freqType, FreqType.day);
+  });
+
+  test('倒计时重复：nextFireFor 按间隔与次数推进，达到上限后死亡', () {
+    final task = Task(
+      id: 't-delay',
+      title: '喝水',
+      scheduledTime: DateTime(2026, 8, 5, 8, 0),
+      triggerType: TriggerType.delayed,
+      intervalSeconds: 1800,
+      maxRepeats: 3,
+      repeatCount: 1,
+      createdAt: DateTime(2026, 8, 1),
+      notificationId: 1,
+    );
+    final now = DateTime(2026, 8, 5, 8, 10);
+    expect(task.nextFireFor(now), DateTime(2026, 8, 5, 8, 30));
+    // 未达到上限：仍非死任务
+    expect(task.isDeadDoneAt(now), isFalse);
+    // 达到上限后：死亡
+    final exhausted = Task(
+      id: 't-delay-done',
+      title: '喝水',
+      scheduledTime: DateTime(2026, 8, 5, 8, 0),
+      triggerType: TriggerType.delayed,
+      intervalSeconds: 1800,
+      maxRepeats: 3,
+      repeatCount: 3,
+      status: TaskStatus.done,
+      createdAt: DateTime(2026, 8, 1),
+      notificationId: 1,
+    );
+    expect(exhausted.nextFireFor(now), isNull);
+    expect(exhausted.isDeadDoneAt(now), isTrue);
   });
 }

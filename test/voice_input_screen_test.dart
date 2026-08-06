@@ -1,4 +1,4 @@
-// 语音规划页测试：离线文本/NLP、云端录音流程、四态预览、确认添加计数
+// 语音规划浮层测试（V2）：文本解析、录音追加光标、四态预览、确认添加计数
 import 'dart:async';
 
 import 'package:daily_planner/models/task.dart';
@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fakes.dart';
 
-/// 假 ASR：立即回传固定文本
+/// 假 ASR：立即回传固定文本（含 partial），等待点击停止后返回
 class FakeAsr extends AliyunAsrService {
   FakeAsr(this.transcript) : super(apiKey: '');
 
@@ -23,7 +23,6 @@ class FakeAsr extends AliyunAsrService {
     required void Function(String) onPartial,
   }) async {
     onPartial(transcript);
-    // 模拟真实录音：等待用户点击停止后才返回
     await _done.future;
     return transcript;
   }
@@ -63,7 +62,7 @@ void main() {
     return DateTime(base.year, base.month, base.day, hour);
   }
 
-  /// 返回语音页路由 Future；确认添加后由调用方 await 取结果
+  /// 以底部浮层方式弹出语音规划，返回关闭后的 Future 以便断言结果
   Future<Future<VoicePlanResult?>> pumpVoice(
     WidgetTester tester, {
     AliyunAsrService? asr,
@@ -74,47 +73,61 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(navigatorKey: navKey, home: const Scaffold()),
     );
-    final routeFuture = navKey.currentState!.push<VoicePlanResult>(
-      MaterialPageRoute(
-        builder: (_) => VoiceInputScreen(
-          store: store,
-          reminder: buildFakeReminder(),
-          asr: asr,
-          schedule: schedule,
-          cloudEnabled: cloudEnabled,
-          requestMicPermission: () async => true,
-        ),
+    final sheetFuture = showModalBottomSheet<VoicePlanResult>(
+      context: navKey.currentContext!,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => VoiceInputScreen(
+        store: store,
+        reminder: buildFakeReminder(),
+        asr: asr,
+        schedule: schedule,
+        cloudEnabled: cloudEnabled,
+        requestMicPermission: () async => true,
       ),
     );
     await tester.pumpAndSettle();
-    return routeFuture;
+    return sheetFuture;
   }
 
-  testWidgets('离线文本模式：无录音按钮，NLP 解析后进入预览', (tester) async {
+  testWidgets('文本模式：输入后解析进入预览', (tester) async {
     await pumpVoice(tester, cloudEnabled: false);
-    expect(find.byIcon(Icons.mic), findsNothing);
-    await tester.enterText(
-      find.byType(TextField),
-      '明天上午10点开会',
-    );
-    await tester.tap(find.text('解析'));
+    await tester.enterText(find.byType(TextField), '明天上午10点开会');
+    await tester.tap(find.text('解析当前内容'));
     await tester.pumpAndSettle();
     expect(find.text('开会'), findsOneWidget);
+    expect(find.text('排期结果'), findsOneWidget);
   });
 
-  testWidgets('云端录音流程：录音→停止→转写→解析→预览', (tester) async {
+  testWidgets('录音转写追加到光标处，不覆盖已输入文字', (tester) async {
+    final asr = FakeAsr('上午九点开会');
+    await pumpVoice(tester, asr: asr, cloudEnabled: true);
+    await tester.enterText(find.byType(TextField), '明天');
+    await tester.tap(find.byKey(const ValueKey('voice-start')));
+    await tester.pump();
+    expect(find.text('识别中…'), findsOneWidget);
+    // 录音内容追加在光标处：明天 + 上午九点开会
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, '明天上午九点开会');
+    // 停止录音
+    await tester.tap(find.byKey(const ValueKey('voice-stop')));
+    await tester.pumpAndSettle();
+    expect(asr.stopCalls, 1);
+    expect(field.controller!.text, '明天上午九点开会');
+  });
+
+  testWidgets('云端录音流程：录音→停止→解析→预览', (tester) async {
     final asr = FakeAsr('吃药提醒');
     final schedule = FakeSchedule([
       ScheduledTask(title: '吃药', scheduledTime: future()),
     ]);
     await pumpVoice(tester, asr: asr, schedule: schedule, cloudEnabled: true);
-    await tester.tap(find.byIcon(Icons.mic));
+    await tester.tap(find.byKey(const ValueKey('voice-start')));
     await tester.pump();
-    expect(find.text('识别中…（点击下方停止）'), findsOneWidget);
-    await tester.tap(find.text('停止'));
+    await tester.tap(find.byKey(const ValueKey('voice-stop')));
     await tester.pumpAndSettle();
     expect(asr.stopCalls, 1);
-    await tester.tap(find.text('解析'));
+    await tester.tap(find.text('解析当前内容'));
     await tester.pumpAndSettle();
     expect(find.text('吃药'), findsOneWidget);
   });
@@ -132,14 +145,14 @@ void main() {
     final schedule = FakeSchedule([
       ScheduledTask(
         title: '面试评审',
-        scheduledTime: future(hour: 10, days: 1).add(const Duration(minutes: 30)),
+        scheduledTime: future(hour: 10).add(const Duration(minutes: 30)),
         resource: '会议室A',
         durationMinutes: 60,
       ),
     ]);
     await pumpVoice(tester, schedule: schedule, cloudEnabled: false);
     await tester.enterText(find.byType(TextField), '测试');
-    await tester.tap(find.text('解析'));
+    await tester.tap(find.text('解析当前内容'));
     await tester.pumpAndSettle();
     expect(find.text('冲突待处理'), findsOneWidget);
     await tester.tap(find.text('确认覆盖'));
@@ -153,7 +166,7 @@ void main() {
     ]);
     await pumpVoice(tester, schedule: schedule, cloudEnabled: false);
     await tester.enterText(find.byType(TextField), '测试');
-    await tester.tap(find.text('解析'));
+    await tester.tap(find.text('解析当前内容'));
     await tester.pumpAndSettle();
     expect(find.text('时间待定'), findsOneWidget);
     expect(find.text('设时间'), findsOneWidget);
@@ -168,7 +181,7 @@ void main() {
     ]);
     await pumpVoice(tester, schedule: schedule, cloudEnabled: false);
     await tester.enterText(find.byType(TextField), '测试');
-    await tester.tap(find.text('解析'));
+    await tester.tap(find.text('解析当前内容'));
     await tester.pumpAndSettle();
     expect(find.text('已过去'), findsOneWidget);
     expect(find.text('将添加 0 条 · 跳过 1 条'), findsOneWidget);
@@ -188,7 +201,7 @@ void main() {
       ScheduledTask(title: '普通任务', scheduledTime: future(hour: 15)),
       ScheduledTask(
         title: '冲突任务',
-        scheduledTime: future(hour: 10, days: 1).add(const Duration(minutes: 30)),
+        scheduledTime: future(hour: 10).add(const Duration(minutes: 30)),
         resource: '会议室A',
         durationMinutes: 60,
       ),
@@ -197,18 +210,18 @@ void main() {
         scheduledTime: DateTime.now().subtract(const Duration(days: 1)),
       ),
     ]);
-    final routeFuture = await pumpVoice(
+    final sheetFuture = await pumpVoice(
       tester,
       schedule: schedule,
       cloudEnabled: false,
     );
     await tester.enterText(find.byType(TextField), '测试');
-    await tester.tap(find.text('解析'));
+    await tester.tap(find.text('解析当前内容'));
     await tester.pumpAndSettle();
     expect(find.text('将添加 2 条 · 跳过 1 条'), findsOneWidget);
     await tester.tap(find.text('确认添加'));
     await tester.pumpAndSettle();
-    final result = await routeFuture;
+    final result = await sheetFuture;
     expect(result, isNotNull);
     expect(result!.added, 2);
     expect(result.conflict, 1);
@@ -216,6 +229,9 @@ void main() {
     final titles = store.all.map((t) => t.title).toSet();
     expect(titles, containsAll(['产品周会', '普通任务', '冲突任务']));
     expect(titles, isNot(contains('昨天的事')));
-    expect(store.all.firstWhere((t) => t.title == '冲突任务').effective, isFalse);
+    expect(
+      store.all.firstWhere((t) => t.title == '冲突任务').effective,
+      isFalse,
+    );
   });
 }

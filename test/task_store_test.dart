@@ -113,17 +113,47 @@ void main() {
     expect(saved.scheduledTime, isNot(DateTime(2026, 8, 5, 7)));
   });
 
-  test('markMissedIfNeeded：过期一次性标 missed、重复任务跳过', () async {
+  test('init 后按创建时间降序返回（新任务在前）', () async {
+    final dao = TaskDao();
+    Task make(String id, DateTime created) => Task(
+          id: id,
+          title: id,
+          scheduledTime: DateTime(2026, 8, 5, 9),
+          createdAt: created,
+          notificationId: 1,
+        );
+    await dao.insert(make('老任务', DateTime(2026, 8, 1)), userId: 1);
+    await dao.insert(make('新任务', DateTime(2026, 8, 5)), userId: 1);
     final store = TaskStore(userId: 1);
     await store.init();
-    await store.add(buildTask('过期', scheduledTime: DateTime(2026, 8, 4, 9)));
-    await store.add(buildTask(
-      '重复',
-      scheduledTime: DateTime(2026, 8, 4, 9),
-      repeat: RepeatType.daily,
-    ));
-    await store.markMissedIfNeededAt(DateTime(2026, 8, 5, 8));
-    expect(store.getById('过期')!.status, TaskStatus.missed);
-    expect(store.getById('重复')!.status, TaskStatus.pending);
+    expect(store.all.map((t) => t.id), ['新任务', '老任务']);
+  });
+
+  test('toggleDone：倒计时重复推进次数，达到上限后完成（死任务）', () async {
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final delayed = Task(
+      id: '喝水',
+      title: '喝水',
+      scheduledTime: DateTime(2026, 8, 5, 8, 0),
+      triggerType: TriggerType.delayed,
+      intervalSeconds: 1800,
+      maxRepeats: 2,
+      repeatCount: 0,
+      createdAt: DateTime(2026, 8, 1),
+      notificationId: 1,
+    );
+    await store.add(delayed);
+    final now = DateTime(2026, 8, 5, 8, 10);
+    await store.toggleDoneAt(store.getById('喝水')!, now);
+    var saved = store.getById('喝水')!;
+    expect(saved.status, TaskStatus.pending);
+    expect(saved.repeatCount, 1);
+    expect(saved.nextFireTime, DateTime(2026, 8, 5, 8, 30));
+    // 第二次完成达到上限 → 死任务（done）
+    await store.toggleDoneAt(store.getById('喝水')!, now);
+    saved = store.getById('喝水')!;
+    expect(saved.status, TaskStatus.done);
+    expect(saved.isDeadDoneAt(now), isTrue);
   });
 }

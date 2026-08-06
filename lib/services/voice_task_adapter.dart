@@ -25,6 +25,13 @@ Task taskFromScheduled(
   if (task.scheduledTime == null && seconds != null && seconds > 0) {
     task.scheduledTime = now.add(Duration(seconds: seconds));
   }
+  // 倒计时重复（DELAYED）：间隔缺省回退到首次倒计时秒数；
+  // 首次触发即 next_fire_time，进度从 0 开始
+  if (task.isDelayed) {
+    task.intervalSeconds = task.intervalSeconds ?? seconds;
+    task.repeatCount = 0;
+    task.nextFireTime = task.scheduledTime;
+  }
   task.note = scheduled.note;
   return task;
 }

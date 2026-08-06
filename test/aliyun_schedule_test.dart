@@ -229,6 +229,51 @@ void main() {
           reason: '回退路径不应把「下周一」误判为每周重复');
     });
   });
+
+  group('parseJson - 多任务与倒计时重复（冒烟缺陷回归）', () {
+    test('一次口语多个任务全部解析（含思考链包裹）', () {
+      final json = '''
+<think>用户安排了开会和打电话两件事</think>
+{"tasks":[
+  {"title":"晨会同步项目进度","datetime":"2026-08-07 09:00","duration_minutes":120,"resource":"会议室A"},
+  {"title":"给客户回电话","datetime":"2026-08-07 14:00","duration_minutes":15}
+]}
+''';
+      final list = AliyunScheduleService.parseJson(json);
+      expect(list, hasLength(2));
+      expect(list.map((t) => t.title), ['晨会同步项目进度', '给客户回电话']);
+    });
+
+    test('裸数组多任务解析', () {
+      final json = '''
+[{"title":"第一件事","datetime":"2026-08-07 09:00"},
+ {"title":"第二件事","datetime":"2026-08-07 10:00"}]
+''';
+      final list = AliyunScheduleService.parseJson(json);
+      expect(list, hasLength(2));
+    });
+
+    test('倒计时重复：interval_seconds + max_repeats → DELAYED 字段', () {
+      final list = AliyunScheduleService.parseJson(
+        '{"tasks":[{"title":"提醒喝水","remind_in_seconds":1800,"interval_seconds":1800,"max_repeats":5}]}',
+        now: DateTime(2026, 8, 5, 8, 0),
+      );
+      final task = list.single;
+      expect(task.maxRepeats, 5);
+      expect(task.intervalSeconds, 1800);
+      expect(task.scheduledTime, DateTime(2026, 8, 5, 8, 30));
+    });
+
+    test('倒计时重复：缺省 interval 回退首次倒计时秒数', () {
+      final list = AliyunScheduleService.parseJson(
+        '{"tasks":[{"title":"吃药","remind_in_seconds":600,"max_repeats":3}]}',
+        now: DateTime(2026, 8, 5, 8, 0),
+      );
+      final task = list.single;
+      expect(task.maxRepeats, 3);
+      expect(task.intervalSeconds, 600);
+    });
+  });
 }
 
 /// 模拟网络异常的 http 客户端：任何请求都抛错，触发 schedule 的回退分支。

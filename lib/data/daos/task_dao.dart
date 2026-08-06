@@ -50,7 +50,7 @@ class TaskDao {
       'tasks',
       where: where.toString(),
       whereArgs: args,
-      orderBy: 'scheduled_time ASC',
+      orderBy: 'created_at DESC',
     );
     return rows.map(Task.fromMap).toList();
   }

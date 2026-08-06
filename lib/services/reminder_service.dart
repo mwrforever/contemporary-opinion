@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'
     show DateTimeComponents;
 
+import '../data/daos/settings_dao.dart';
+import '../data/models/reminder_settings.dart';
 import '../models/task.dart';
 import 'audio_service.dart';
 import 'reminder_scheduler.dart';
@@ -21,6 +23,8 @@ class ReminderService {
     AudioService? audio,
     TtsService? tts,
     this.enableInAppTimers = true,
+    this.voiceLoopTotal = const Duration(seconds: 10),
+    this.voiceGap = const Duration(seconds: 2),
   })  : _scheduler = scheduler ?? ReminderSchedulerIo(),
         audio = audio ?? AudioService(),
         tts = tts ?? TtsService();
@@ -35,10 +39,14 @@ class ReminderService {
   final Map<String, Timer> _timers = {};
   final Set<String> _alertStopFlags = {};
   TaskStore? _store;
+  ReminderSettings _settings = const ReminderSettings();
 
   /// 语音提醒循环总时长：到点后语音播报循环播放，直至该时长结束。
-  static const Duration _voiceLoopTotal = Duration(seconds: 10);
-  static const Duration _voiceGap = Duration(seconds: 2);
+  /// 可注入以便测试（生产默认 10 秒）。
+  final Duration voiceLoopTotal;
+
+  /// 语音播报之间的间隔（可注入以便测试，生产默认 2 秒）。
+  final Duration voiceGap;
 
   Future<void> init(TaskStore store) async {
     _store = store;
@@ -49,6 +57,16 @@ class ReminderService {
 
   /// 申请通知与精确闹钟权限
   Future<void> ensurePermissions() => _scheduler.requestPermissions();
+
+  /// 读取当前用户的提醒设置（静音/震动/语音 + 音量），供到点播报分支使用。
+  Future<void> reloadSettings(int userId) async {
+    try {
+      _settings = await SettingsDao().get(userId);
+    } catch (_) {
+      // 设置读取失败时保持默认（语音播报 + 震动）
+      _settings = const ReminderSettings();
+    }
+  }
 
   /// 启动时重新调度所有未完成任务
   Future<void> scheduleAll() async {
@@ -198,19 +216,22 @@ class ReminderService {
     final text = _speakText(task);
     final start = DateTime.now();
 
-    // 响铃：在整段循环窗口内持续（audio.playRing 内部每 2 秒重播一次），fire-and-forget。
-    unawaited(audio.playRing(duration: _voiceLoopTotal));
+    // 静音模式：到点不发声音（仅依赖系统通知展示）；否则响铃 + 语音播报
+    if (_settings.mode != ReminderMode.mute) {
+      unawaited(audio.playRing(duration: voiceLoopTotal));
 
-    while (DateTime.now().difference(start) < _voiceLoopTotal) {
-      if (_alertStopFlags.contains(task.id)) break;
-      try {
-        await tts.speakAndAwait(text);
-      } catch (_) {
-        // 播报不可用则忽略，继续走完窗口
+      while (DateTime.now().difference(start) < voiceLoopTotal) {
+        if (_alertStopFlags.contains(task.id)) break;
+        try {
+          await tts.setVolume(_settings.volume / 100);
+          await tts.speakAndAwait(text);
+        } catch (_) {
+          // 播报不可用则忽略，继续走完窗口
+        }
+        if (_alertStopFlags.contains(task.id)) break;
+        if (DateTime.now().difference(start) >= voiceLoopTotal) break;
+        await Future.delayed(voiceGap);
       }
-      if (_alertStopFlags.contains(task.id)) break;
-      if (DateTime.now().difference(start) >= _voiceLoopTotal) break;
-      await Future.delayed(_voiceGap);
     }
     _alertStopFlags.remove(task.id);
   }

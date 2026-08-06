@@ -82,4 +82,44 @@ void main() {
       expect(task.source, TaskSource.voice);
     });
   });
+
+  group('taskFromScheduled - 倒计时重复（DELAYED）', () {
+    test('interval_seconds + max_repeats → 延时重复任务，首次触发即 next_fire_time', () {
+      final scheduled = ScheduledTask(
+        title: '提醒喝水',
+        scheduledTime: now.add(const Duration(minutes: 30)),
+        countdownSeconds: 1800,
+        intervalSeconds: 1800,
+        maxRepeats: 5,
+      );
+      final task = taskFromScheduled(
+        scheduled,
+        id: 'id-delay',
+        notificationId: 11,
+        now: now,
+      );
+      expect(task.isDelayed, isTrue);
+      expect(task.intervalSeconds, 1800);
+      expect(task.maxRepeats, 5);
+      expect(task.repeatCount, 0);
+      expect(task.nextFireTime, task.scheduledTime);
+    });
+
+    test('缺省 interval 回退到首次倒计时秒数', () {
+      final scheduled = ScheduledTask(
+        title: '吃药',
+        scheduledTime: now.add(const Duration(minutes: 10)),
+        countdownSeconds: 600,
+        maxRepeats: 3,
+      );
+      final task = taskFromScheduled(
+        scheduled,
+        id: 'id-delay2',
+        notificationId: 12,
+        now: now,
+      );
+      expect(task.isDelayed, isTrue);
+      expect(task.intervalSeconds, 600);
+    });
+  });
 }

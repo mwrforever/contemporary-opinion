@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -28,12 +29,13 @@ class VoicePlanResult {
   final int skipped;
 }
 
-/// 语音规划页：录音（云端）或文本输入（离线）→ 排期解析 → 逐条冲突检测 →
-/// 四态预览 → 确认添加。
+/// 语音规划浮层（V2）：同页底部弹出，不跳转新页面。
 ///
-/// 离线（无云端 Key）：App 不做录音/ASR，用户手写或经系统输入法语音转文字
-/// 写入文本框，走本地 [NlpParser]。冲突处理（改时间/换资源/设时间）为手动编辑对话框，
-/// 非语音操作。
+/// 冒烟整改口径：
+/// - 可先打字，录音转写内容**追加到光标处**，不覆盖已输入内容；
+/// - 录音不跳页：在浮层内完成；停止键为单层环 + 红方块；
+/// - 排期结果同浮层展示：冲突条目红色标记，点条目可改时间/换资源；
+/// - 逐条保存，单条失败不中断其余任务（修复「多任务只保存一个」）。
 class VoiceInputScreen extends StatefulWidget {
   const VoiceInputScreen({
     super.key,
@@ -83,7 +85,8 @@ class _PlanItem {
   bool get isWeakOverlap => result.hasTimeConflict && !result.hasResourceConflict;
 }
 
-class _VoiceInputScreenState extends State<VoiceInputScreen> {
+class _VoiceInputScreenState extends State<VoiceInputScreen>
+    with SingleTickerProviderStateMixin {
   final _textController = TextEditingController();
   late final AliyunAsrService _asr =
       widget.asr ?? AliyunAsrService(apiKey: AliyunConfig.dashscopeApiKey);
@@ -92,14 +95,17 @@ class _VoiceInputScreenState extends State<VoiceInputScreen> {
   late final Future<bool> Function() _requestMic =
       widget.requestMicPermission ?? _defaultMicPermission;
 
+  late final AnimationController _wave;
+
   _Phase _phase = _Phase.idle;
-  String _transcript = '';
-  bool _recording = false;
   List<_PlanItem> _items = [];
   final _baseId = DateTime.now().millisecondsSinceEpoch ~/ 1000 % 1000000;
 
-  bool get _cloudEnabled =>
-      widget.cloudEnabled ?? AliyunConfig.dashscopeApiKey.isNotEmpty;
+  /// 录音插入锚点：开始录音时的光标位置
+  int _insertOffset = 0;
+
+  /// 当前录音转写片段（用于替换更新，实现追加在光标处）
+  String _pending = '';
 
   static Future<bool> _defaultMicPermission() async {
     final status = await Permission.microphone.request();
@@ -108,33 +114,77 @@ class _VoiceInputScreenState extends State<VoiceInputScreen> {
 
   @override
   void dispose() {
+    _wave.dispose();
     _textController.dispose();
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    // 立即创建（不能惰性初始化：dispose 阶段首次访问会触发崩溃）；
+    // 仅在录音期间循环，避免空闲态持续调度帧导致界面/测试无法收敛
+    _wave = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+  }
+
   int _notificationId(int index) => _baseId + index;
 
-  /// 录音识别：ASR 内部负责录音采集，页面只负责启动/停止
+  /// 录音识别：ASR 内部负责录音采集，页面只负责启动/停止；
+  /// 转写片段实时插入光标处（不覆盖已有文字）。
   Future<void> _startRecording() async {
     final granted = await _requestMic();
     if (!granted || !mounted) {
       _toast('需要麦克风权限才能语音规划');
       return;
     }
-    setState(() => _phase = _Phase.recording);
+    setState(() {
+      _phase = _Phase.recording;
+      _insertOffset = _textController.selection.isValid
+          ? _textController.selection.baseOffset
+          : _textController.text.length;
+      _pending = '';
+    });
+    _wave.repeat();
     try {
       final text = await _asr.transcribe(onPartial: (t) {
-        if (mounted) setState(() => _transcript = t);
+        if (!mounted) return;
+        setState(() => _applyPartial(t));
       });
       if (!mounted) return;
-      _transcript = text;
-      setState(() => _phase = _Phase.idle);
-      _textController.text = text;
+      setState(() {
+        _applyPartial(text);
+        _pending = '';
+        _phase = _Phase.idle;
+      });
+      _stopWave();
     } catch (_) {
       if (!mounted) return;
-      setState(() => _phase = _Phase.idle);
+      setState(() {
+        _pending = '';
+        _phase = _Phase.idle;
+      });
+      _stopWave();
       _toast('识别失败，请重试或手动输入');
     }
+  }
+
+  /// 停止音波动画并复位（录音结束调用）。
+  void _stopWave() {
+    _wave.stop();
+    _wave.value = 0;
+  }
+
+  /// 把转写文本 [text] 替换到光标锚点处的当前片段（追加语义）。
+  void _applyPartial(String text) {
+    final c = _textController;
+    final base = _insertOffset.clamp(0, c.text.length);
+    final end = (base + _pending.length).clamp(0, c.text.length);
+    c.text = c.text.replaceRange(base, end, text);
+    _pending = text;
+    c.selection = TextSelection.collapsed(offset: base + text.length);
   }
 
   void _stopRecording() {
@@ -228,6 +278,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen> {
     setState(() {});
   }
 
+  /// 确认添加：逐条入库，单条异常不中断其余（修复多任务只保存一个）。
   Future<void> _confirm() async {
     var added = 0;
     var conflict = 0;
@@ -237,12 +288,17 @@ class _VoiceInputScreenState extends State<VoiceInputScreen> {
         skipped++;
         continue;
       }
-      await widget.store.addWithConflictCheck(item.task);
-      await widget.reminder.notifyTaskChanged(item.task);
-      added++;
-      if (item.task.hasPendingConflict) conflict++;
+      try {
+        await widget.store.addWithConflictCheck(item.task);
+        await widget.reminder.notifyTaskChanged(item.task);
+        added++;
+        if (item.task.hasPendingConflict) conflict++;
+      } catch (_) {
+        // 单条保存失败跳过，不中断后续任务
+      }
     }
     if (!mounted) return;
+    _stopWave();
     Navigator.of(context).pop(
       VoicePlanResult(added: added, conflict: conflict, skipped: skipped),
     );
@@ -255,132 +311,344 @@ class _VoiceInputScreenState extends State<VoiceInputScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('语音规划')),
-      body: switch (_phase) {
-        _Phase.preview => _buildPreview(),
-        _Phase.recording || _Phase.parsing => _buildWorking(),
-        _Phase.idle => _buildInput(),
-      },
-    );
-  }
-
-  /// 输入区：云端显示录音按钮，离线显示文本框
-  Widget _buildInput() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_cloudEnabled) ...[
-            Center(
-              child: IconButton.filled(
-                iconSize: 40,
-                padding: const EdgeInsets.all(24),
-                icon: const Icon(Icons.mic),
-                onPressed: _startRecording,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '点击麦克风，说一句口语规划',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 24),
-          ],
-          TextField(
-            controller: _textController,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: '规划内容',
-              hintText: '如：明早9点用会议室A开会两小时，半小时后提醒我吃药',
-              border: OutlineInputBorder(),
-            ),
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 14,
+            bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 52,
-            child: FilledButton(
-              onPressed: _parse,
-              child: const Text('解析'),
-            ),
-          ),
-        ],
+          child: switch (_phase) {
+            _Phase.preview => _buildPreview(scheme),
+            _Phase.recording || _Phase.parsing => _buildWorking(scheme),
+            _Phase.idle => _buildInput(scheme),
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildWorking() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(),
-          const SizedBox(height: 16),
-          Text(
-            _phase == _Phase.recording ? '识别中…（点击下方停止）' : '正在解析排期…',
-            style: const TextStyle(fontSize: 14),
-          ),
-          if (_phase == _Phase.recording) ...[
-            const SizedBox(height: 20),
-            FilledButton.tonal(
-              onPressed: _stopRecording,
-              child: const Text('停止'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPreview() {
-    final addedCount =
-        _items.where((i) => !i.isPast && i.selected).length;
-    final skippedCount = _items.where((i) => i.isPast || !i.selected).length;
-    return Column(
+  Widget _sheetHeader(String title, {Widget? trailing}) {
+    return Row(
       children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: _items.length,
-            itemBuilder: (context, i) => _PreviewCard(
-              item: _items[i],
-              onToggle: () => setState(() => _items[i].selected = !_items[i].selected),
-              onConfirmOverride: () => _confirmOverride(_items[i]),
-              onEdit: () => _editItem(_items[i]),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+        ),
+        const Spacer(),
+        if (trailing != null) trailing,
+        IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  /// 输入区：可打字 + 录音追加到光标处
+  Widget _buildInput(ColorScheme scheme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sheetHeader('语音规划'),
+        TextField(
+          controller: _textController,
+          maxLines: 3,
+          minLines: 2,
+          decoration: InputDecoration(
+            hintText: '输入或直接录音，录音内容将插入光标处…',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Icon(Icons.mic_none, size: 15, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 6),
+            Text(
+              '点一下麦克风，说一句口语规划（同页录音，不跳转）',
+              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: Column(
+            children: [
+              Icon(Icons.hearing_outlined,
+                  size: 44, color: scheme.outlineVariant),
+              const SizedBox(height: 14),
+              GestureDetector(
+                key: const ValueKey('voice-start'),
+                onTap: _startRecording,
+                child: Container(
+                  width: 92,
+                  height: 92,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withValues(alpha: 0.42),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Icon(Icons.mic, size: 38, color: scheme.onPrimary),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                '轻触开始录音',
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: _parse,
+                child: const Text('解析当前内容'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 录音中 / 解析中
+  Widget _buildWorking(ColorScheme scheme) {
+    final recording = _phase == _Phase.recording;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sheetHeader(
+          '语音规划',
+          trailing: recording
+              ? Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warnSoft,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Text(
+                    '识别中…',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.warn,
+                    ),
+                  ),
+                )
+              : null,
+        ),
+        TextField(
+          controller: _textController,
+          maxLines: 3,
+          minLines: 2,
+          enabled: false,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Center(
+          child: recording
+              ? Column(
+                  children: [
+                    _EarWaves(animation: _wave, color: scheme.primary),
+                    const SizedBox(height: 12),
+                    // 停止键：单层环 + 红方块（无双层环）
+                    GestureDetector(
+                      key: const ValueKey('voice-stop'),
+                      onTap: _stopRecording,
+                      child: Container(
+                        width: 92,
+                        height: 92,
+                        decoration: BoxDecoration(
+                          color: scheme.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: scheme.primary, width: 2.5),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x29101315),
+                              blurRadius: 20,
+                              offset: Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: AppTheme.danger,
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      '正在聆听… 点击红色方块停止',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                )
+              : const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: CircularProgressIndicator(),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// 排期结果预览：冲突条目红色标记，点条目改时间/换资源
+  Widget _buildPreview(ColorScheme scheme) {
+    final addedCount = _items.where((i) => !i.isPast && i.selected).length;
+    final skippedCount = _items.where((i) => i.isPast || !i.selected).length;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sheetHeader('排期结果'),
+        Text(
+          '识别出 ${_items.length} 条 · 已检查冲突',
+          style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 10),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.42,
+          ),
+          child: SingleChildScrollView(
             child: Column(
               children: [
-                Text(
-                  '将添加 $addedCount 条 · 跳过 $skippedCount 条',
-                  style: const TextStyle(fontSize: 13),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: _confirm,
-                    child: const Text('确认添加'),
+                for (var i = 0; i < _items.length; i++)
+                  _PreviewCard(
+                    item: _items[i],
+                    onToggle: () =>
+                        setState(() => _items[i].selected = !_items[i].selected),
+                    onConfirmOverride: () => _confirmOverride(_items[i]),
+                    onEdit: () => _editItem(_items[i]),
                   ),
-                ),
               ],
             ),
           ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '将添加 $addedCount 条 · 跳过 $skippedCount 条',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: FilledButton(onPressed: _confirm, child: const Text('确认添加')),
         ),
       ],
     );
   }
 }
 
-/// 四态预览卡
+/// 耳朵 + 音波动效（从两侧汇入耳朵，振幅随时间变化）。
+class _EarWaves extends StatelessWidget {
+  const _EarWaves({required this.animation, required this.color});
+
+  final Animation<double> animation;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 150,
+      height: 66,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final t = animation.value;
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              // 左侧音波：3 条弧线从左侧汇入
+              for (var i = 0; i < 3; i++)
+                Positioned(
+                  right: 58,
+                  top: 14 + i * 4,
+                  child: _arc(
+                    left: true,
+                    opacity: (math.sin((t * math.pi * 2) - i * 0.7) + 1) / 2,
+                    dx: -10 * math.sin(t * math.pi * 2 - i),
+                    height: 20 + i * 9,
+                  ),
+                ),
+              // 右侧音波：3 条弧线从右侧汇入
+              for (var i = 0; i < 3; i++)
+                Positioned(
+                  left: 58,
+                  top: 16 + i * 4,
+                  child: _arc(
+                    left: false,
+                    opacity: (math.sin((t * math.pi * 2) + 0.4 - i * 0.7) + 1) / 2,
+                    dx: 10 * math.sin(t * math.pi * 2 - i),
+                    height: 22 + i * 9,
+                  ),
+                ),
+              Icon(Icons.hearing_outlined, size: 44, color: color),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _arc({
+    required bool left,
+    required double opacity,
+    required double dx,
+    required double height,
+  }) {
+    return Transform.translate(
+      offset: Offset(dx.toDouble(), 0),
+      child: Opacity(
+        opacity: opacity.clamp(0.1, 1.0),
+        child: Container(
+          width: 58,
+          height: height,
+          decoration: BoxDecoration(
+            border: Border(
+              left: left ? BorderSide(color: color, width: 2.5) : BorderSide.none,
+              right: left ? BorderSide.none : BorderSide(color: color, width: 2.5),
+            ),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 预览卡：冲突/待定/已过去标记 + 操作
 class _PreviewCard extends StatelessWidget {
   const _PreviewCard({
     required this.item,
@@ -431,11 +699,11 @@ class _PreviewCard extends StatelessWidget {
     }
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: bg ?? scheme.surface,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: border ?? scheme.outlineVariant,
           width: border != null ? 2 : 1,
@@ -451,6 +719,7 @@ class _PreviewCard extends StatelessWidget {
               child: Container(
                 width: 24,
                 height: 24,
+                margin: const EdgeInsets.only(top: 1),
                 decoration: BoxDecoration(
                   color: item.selected ? scheme.primary : Colors.transparent,
                   borderRadius: BorderRadius.circular(8),
@@ -459,11 +728,11 @@ class _PreviewCard extends StatelessWidget {
                   ),
                 ),
                 child: item.selected
-                    ? Icon(Icons.check, size: 16, color: scheme.onPrimary)
+                    ? const Icon(Icons.check, size: 15, color: Colors.white)
                     : null,
               ),
             ),
-          if (!item.isPast) const SizedBox(width: 12),
+          if (!item.isPast) const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -473,10 +742,11 @@ class _PreviewCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         task.title,
-                        style: TextStyle(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: scheme.onSurface,
                         ),
                       ),
                     ),
@@ -503,7 +773,7 @@ class _PreviewCard extends StatelessWidget {
                 ),
                 if (task.scheduledTime != null || task.resource != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: 5),
                     child: Wrap(
                       spacing: 10,
                       children: [
@@ -531,7 +801,7 @@ class _PreviewCard extends StatelessWidget {
                   ),
                 if (hint != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: 5),
                     child: Text(
                       hint,
                       style: const TextStyle(
@@ -542,7 +812,7 @@ class _PreviewCard extends StatelessWidget {
                   ),
                 if (item.isPast)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.only(top: 5),
                     child: Text(
                       '已过期，将跳过不添加',
                       style: const TextStyle(
@@ -552,29 +822,34 @@ class _PreviewCard extends StatelessWidget {
                     ),
                   ),
                 if (item.isConflict || item.isUndated) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       if (item.isConflict) ...[
                         FilledButton(
                           style: FilledButton.styleFrom(
                             backgroundColor: AppTheme.danger,
-                            minimumSize: const Size(0, 36),
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            minimumSize: const Size(0, 32),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
                           ),
                           onPressed: onConfirmOverride,
                           child: const Text(
                             '确认覆盖',
-                            style: TextStyle(fontSize: 13),
+                            style: TextStyle(fontSize: 12.5),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                       ],
                       TextButton(
                         onPressed: onEdit,
                         child: Text(
                           item.isConflict ? '改时间/换资源' : '设时间',
-                          style: const TextStyle(fontSize: 12.5),
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: item.isConflict
+                                ? AppTheme.danger
+                                : scheme.primary,
+                          ),
                         ),
                       ),
                     ],

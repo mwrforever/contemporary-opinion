@@ -17,10 +17,12 @@ class FakeScheduler implements ReminderScheduler {
   final cancelled = <int>[];
   int initCalls = 0;
   int permissionCalls = 0;
+  void Function(String payload)? payloadCallback;
 
   @override
   Future<void> init({void Function(String payload)? onPayload}) async {
     initCalls++;
+    payloadCallback = onPayload;
   }
 
   @override
@@ -48,12 +50,15 @@ class FakeScheduler implements ReminderScheduler {
 
 class FakeAudio extends AudioService {
   bool stopped = false;
+  int ringCount = 0;
 
   @override
   Future<void> init() async {}
 
   @override
-  Future<void> playRing({Duration duration = const Duration(seconds: 5)}) async {}
+  Future<void> playRing({Duration duration = const Duration(seconds: 5)}) async {
+    ringCount++;
+  }
 
   @override
   Future<void> stopRing() async {
@@ -63,6 +68,7 @@ class FakeAudio extends AudioService {
 
 class FakeTts extends TtsService {
   bool stopped = false;
+  int speakCount = 0;
 
   @override
   Future<void> init() async {}
@@ -71,7 +77,12 @@ class FakeTts extends TtsService {
   Future<void> speakAndAwait(
     String text, {
     Duration maxWait = const Duration(seconds: 8),
-  }) async {}
+  }) async {
+    speakCount++;
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {}
 
   @override
   Future<void> interrupt() async {}
@@ -172,6 +183,56 @@ void main() {
     await service.scheduleAll();
     expect(scheduler.scheduled.keys, [7]);
     await service.stopAll();
+    await DatabaseHelper.instance.close();
+  });
+
+  test('提醒设置：静音到点不播报，语音到点播报（含音量）', () async {
+    DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
+    DatabaseHelper.setPathForTest(inMemoryDatabasePath);
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('users', {
+      'username': 'owner',
+      'password_hash': 'hash',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    await db.insert('user_settings', {
+      'user_id': 1,
+      'reminder_mode': 'mute',
+      'vibrate': 1,
+      'reminder_volume': 60,
+    });
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final svc = ReminderService(
+      scheduler: scheduler,
+      audio: audio,
+      tts: tts,
+      voiceLoopTotal: const Duration(milliseconds: 150),
+      voiceGap: const Duration(milliseconds: 10),
+    );
+    await svc.init(store);
+    await svc.reloadSettings(1);
+    final task = buildTask('提醒');
+    task.scheduledTime = DateTime.now().add(const Duration(minutes: 1));
+    await store.add(task);
+    // 静音：到点只展示系统通知，不响铃不播报
+    scheduler.payloadCallback!(task.id);
+    await Future.delayed(const Duration(milliseconds: 80));
+    expect(tts.speakCount, 0);
+    expect(audio.ringCount, 0);
+    // 切回语音：到点响铃 + 播报
+    await db.update(
+      'user_settings',
+      {'reminder_mode': 'voice', 'reminder_volume': 70},
+      where: 'user_id = ?',
+      whereArgs: [1],
+    );
+    await svc.reloadSettings(1);
+    scheduler.payloadCallback!(task.id);
+    await Future.delayed(const Duration(milliseconds: 300));
+    expect(tts.speakCount, greaterThan(0));
+    expect(audio.ringCount, greaterThan(0));
+    await svc.stopAll();
     await DatabaseHelper.instance.close();
   });
 }

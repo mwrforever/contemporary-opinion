@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../modules/notebook/notebook_tab.dart';
@@ -42,6 +44,31 @@ class _MainPageState extends State<MainPage> {
   late final NotebookStore _notebook =
       widget.notebookStore ?? NotebookStore(userId: widget.userId);
   int _index = 0;
+  String _displayName = '朋友';
+
+  @override
+  void initState() {
+    super.initState();
+    // 读取昵称用于首页问候语；同时初始化提醒服务并重排全部任务
+    unawaited(_init());
+  }
+
+  Future<void> _init() async {
+    final user = await _auth.currentUser();
+    if (user != null && mounted) {
+      final name = user.nickname?.isNotEmpty == true
+          ? user.nickname!
+          : user.username;
+      if (name.isNotEmpty) setState(() => _displayName = name);
+    }
+    try {
+      await _reminder.init(_store);
+      await _reminder.reloadSettings(widget.userId);
+      await _reminder.scheduleAll();
+    } catch (_) {
+      // 提醒初始化失败不阻断主流程
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +76,13 @@ class _MainPageState extends State<MainPage> {
       body: IndexedStack(
         index: _index,
         children: [
-          TasksTab(store: _store, reminder: _reminder),
+          TasksTab(
+            store: _store,
+            reminder: _reminder,
+            displayName: _displayName,
+            userId: widget.userId,
+            onOpenProfile: () => setState(() => _index = 2),
+          ),
           NotebookTab(store: _notebook),
           ProfilePage(
             auth: _auth,
