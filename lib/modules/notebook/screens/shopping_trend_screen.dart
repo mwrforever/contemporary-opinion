@@ -199,7 +199,6 @@ class _ShoppingTrendScreenState extends State<ShoppingTrendScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final slices = buildCategorySlices(widget.store.shopping, _anchor, _p);
     final total = slices.fold<num>(0, (s, x) => s + x.value);
     final itemCount =
