@@ -11,6 +11,7 @@ import 'package:daily_planner/modules/notebook/screens/shopping_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/study_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/trip_screen.dart';
 import 'package:daily_planner/modules/notebook/widgets/notebook_report.dart';
+import 'package:daily_planner/modules/notebook/widgets/shopping_item_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -191,5 +192,52 @@ void main() {
     await tester.tap(find.byIcon(Icons.bar_chart));
     await tester.pumpAndSettle();
     expect(find.byType(ReportScreen), findsOneWidget);
+  });
+
+  testWidgets('购物项抽屉：金额/类型/日期保存、折叠展开、金额非法拦截', (tester) async {
+    await pump(
+      tester,
+      Builder(
+        builder: (context) => Scaffold(
+          body: Center(
+            child: ElevatedButton(
+              onPressed: () =>
+                  showShoppingItemSheet(context, store: store, cartId: 'c1'),
+              child: const Text('打开抽屉'),
+            ),
+          ),
+        ),
+      ),
+    );
+    // 窄视口下枚举才需要折叠（抽屉内宽度约 360px）
+    await tester.binding.setSurfaceSize(const Size(400, 1200));
+    await tester.pump();
+    await tester.tap(find.text('打开抽屉'));
+    await tester.pumpAndSettle();
+    // 枚举折叠态：展开按钮存在
+    expect(find.textContaining('展开全部'), findsOneWidget);
+    // 输入名称与金额
+    await tester.enterText(find.byType(TextField).at(0), '三文鱼');
+    await tester.enterText(find.byType(TextField).at(1), '36');
+    // 展开后选择「生鲜食品」
+    await tester.tap(find.textContaining('展开全部'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('生鲜食品'));
+    // 日期字段点击会弹系统选择器，跳过（DateField 已有独立测试）
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    final saved = store.shopping.single;
+    expect(saved.item, '三文鱼');
+    expect(saved.price, 36);
+    expect(saved.category, '生鲜食品');
+    // 非法金额：负数拦截，不新增
+    await tester.tap(find.text('打开抽屉'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '酸奶');
+    await tester.enterText(find.byType(TextField).at(1), '-5');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    expect(store.shopping, hasLength(1));
+    expect(find.textContaining('金额'), findsWidgets); // 就近错误提示
   });
 }
