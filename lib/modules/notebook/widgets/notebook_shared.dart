@@ -508,3 +508,6 @@ Future<void> showNotebookVoiceSheet<T>(
 String notebookNewId() =>
     '${DateTime.now().microsecondsSinceEpoch}_${(_counter++).toString()}';
 int _counter = 0;
+
+/// 金额展示：¥ + 两位小数（购物/报表共用）。
+String formatYuan(num v) => '¥${v.toStringAsFixed(2)}';
