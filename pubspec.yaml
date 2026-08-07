@@ -35,9 +35,9 @@ dependencies:
   # 两者同为百炼/DashScope 模型，共用一个 DASHSCOPE_API_KEY
   http: ^1.2.0
   # 录音 PCM 采集
-  record: ^5.1.2
+  record: ^7.1.1
   # record 包的 Web 实现（Web 端麦克风采集，承载 AliyunAsrService 的录音）
-  record_web: ^1.2.0
+  record_web: ^2.1.1
   # Web 平台 API 现代封装（package:web/web.dart，替代已废弃的 dart:html）
   web: ^1.1.0
 
