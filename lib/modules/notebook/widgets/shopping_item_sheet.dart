@@ -18,7 +18,7 @@ Future<void> showShoppingItemSheet(
 }) async {
   final nameCtrl = TextEditingController(text: item?.item ?? '');
   final priceCtrl =
-      TextEditingController(text: item == null ? '' : _trimPrice(item!.price));
+      TextEditingController(text: item == null ? '' : _trimPrice(item.price));
   final noteCtrl = TextEditingController(text: item?.note ?? '');
   var category = item?.category ?? '其他';
   var date = item?.date ?? '';
@@ -134,11 +134,11 @@ Future<void> showShoppingItemSheet(
                     final ok = await ConfirmDialog.show(
                       ctx,
                       '删除购物项',
-                      '删除「${item!.item}」？',
+                      '删除「${item.item}」？',
                       '删除',
                     );
                     if (ok) {
-                      await store.deleteShopping(item!.id);
+                      await store.deleteShopping(item.id);
                       if (ctx.mounted) Navigator.of(ctx).pop();
                     }
                   },
