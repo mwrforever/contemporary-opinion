@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../models/notebook_shopping.dart';
 import '../../../services/notebook_store.dart';
-import '../../../widgets/confirm_dialog.dart';
-import '../widgets/notebook_report.dart';
+import '../widgets/notebook_shared.dart';
+import '../widgets/shopping_cart_sheet.dart';
+import 'shopping_cart_detail_screen.dart';
+import 'shopping_trend_screen.dart';
 
-/// 购物清单页：子购物车分组 + 购物项，聚合项数/预期/实付/差额。
+/// 购物清单列表页：子购物车单行记录（标题 + 实付/条目数/创建时间）。
+///
+/// 点车行进子页查看购物项；右下 FAB 新建购物车（标题默认当天日期）；
+/// 右上角为消费趋势报表入口；删除购物车后回收的项落在底部「未分组」行。
 class ShoppingScreen extends StatefulWidget {
   const ShoppingScreen({super.key, required this.store});
 
@@ -19,245 +25,174 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   @override
   void initState() {
     super.initState();
-    widget.store.addListener(_onStoreChanged);
+    widget.store.addListener(_onChanged);
   }
 
   @override
   void dispose() {
-    widget.store.removeListener(_onStoreChanged);
+    widget.store.removeListener(_onChanged);
     super.dispose();
   }
 
-  void _onStoreChanged() {
+  void _onChanged() {
     if (mounted) setState(() {});
-  }
-
-  Future<void> _addCart() async {
-    final name = await _promptText('新建购物车', '名称', '');
-    if (name == null || name.isEmpty || !mounted) return;
-    await widget.store.addCart(
-      NotebookShoppingCart(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        name: name,
-        note: null,
-        createdAt: DateTime.now(),
-      ),
-    );
-  }
-
-  Future<void> _addItem(String cartId) async {
-    final result = await _promptItem(
-      title: '添加购物项',
-      initial: null,
-    );
-    if (result == null || !mounted) return;
-    await widget.store.addShopping(
-      NotebookShopping(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        item: result.$1,
-        price: result.$2,
-        category: result.$3,
-        note: '',
-        cartId: cartId,
-        date: '',
-        createdAt: DateTime.now(),
-      ),
-    );
-  }
-
-  Future<void> _editItem(NotebookShopping item) async {
-    final result = await _promptItem(
-      title: '编辑购物项',
-      initial: item,
-    );
-    if (result == null || !mounted) return;
-    await widget.store.updateShopping(
-      NotebookShopping(
-        id: item.id,
-        item: result.$1,
-        price: result.$2,
-        category: result.$3,
-        note: item.note,
-        cartId: item.cartId,
-        date: item.date,
-        createdAt: item.createdAt,
-      ),
-    );
-  }
-
-  Future<void> _deleteItem(NotebookShopping item) async {
-    final ok = await ConfirmDialog.show(
-      context,
-      '删除购物项',
-      '删除「${item.item}」？',
-      '删除',
-    );
-    if (ok) await widget.store.deleteShopping(item.id);
-  }
-
-  Future<void> _deleteCart(NotebookShoppingCart cart) async {
-    final ok = await ConfirmDialog.show(
-      context,
-      '删除购物车',
-      '删除「${cart.name}」，其下购物项将回收为未分组',
-      '删除',
-    );
-    if (ok) await widget.store.deleteCart(cart.id);
-  }
-
-  Future<String?> _promptText(String title, String label, String initial) async {
-    final controller = TextEditingController(text: initial);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          decoration: InputDecoration(labelText: label),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    return value;
-  }
-
-  Future<(String, num, String)?> _promptItem({
-    required String title,
-    required NotebookShopping? initial,
-  }) async {
-    final name = TextEditingController(text: initial?.item ?? '');
-    final price = TextEditingController(text: initial?.price.toString() ?? '');
-    final category = TextEditingController(text: initial?.category ?? '');
-    final result = await showDialog<(String, num, String)>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: name, decoration: const InputDecoration(labelText: '物品')),
-              TextField(
-                controller: price,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '实付金额'),
-              ),
-              TextField(controller: category, decoration: const InputDecoration(labelText: '分类')),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop((
-              name.text.trim(),
-              num.tryParse(price.text) ?? 0,
-              category.text.trim(),
-            )),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    return result;
   }
 
   @override
   Widget build(BuildContext context) {
+    final carts = [...widget.store.shoppingCarts]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final ungrouped =
+        widget.store.shopping.where((i) => i.cartId.isEmpty).toList();
     return Scaffold(
       appBar: AppBar(
         title: const Text('购物清单'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.bar_chart),
+            icon: const Icon(Icons.insert_chart_outlined),
             tooltip: '消费趋势',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => ReportScreen(
-                  title: '购物消费趋势',
-                  unit: '¥',
-                  data: [
-                    for (final i in widget.store.shopping)
-                      ReportDatum(date: i.date, value: i.price),
-                  ],
-                ),
+                builder: (_) => ShoppingTrendScreen(store: widget.store),
               ),
             ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _addCart,
+        onPressed: () => showShoppingCartSheet(context, store: widget.store),
         child: const Icon(Icons.add),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          for (final cart in widget.store.shoppingCarts) ...[
-            _cartHeader(cart),
-            for (final item in widget.store.cartsOf(cart.id)) _itemTile(item),
-            const Divider(),
-          ],
-          if (widget.store.shopping.any((i) => i.cartId.isEmpty)) ...[
-            Text(
-              '未分组',
-              style: Theme.of(context).textTheme.titleMedium,
+      body: carts.isEmpty && ungrouped.isEmpty
+          ? const NotebookEmptyState(
+              icon: Icons.shopping_cart_outlined,
+              title: '还没有购物车',
+              subtitle: '点右下角新建购物车，标题默认当天日期',
+            )
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                for (final cart in carts)
+                  _cartRow(context, cart, widget.store.cartsOf(cart.id)),
+                if (ungrouped.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  _ungroupedPseudoRow(context, ungrouped),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '删除购物车后，其下购物项自动回收至此「未分组」',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
-            for (final item in widget.store.shopping.where((i) => i.cartId.isEmpty))
-              _itemTile(item),
-          ],
-          if (widget.store.shopping.isEmpty)
-            const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('还没有购物项，点右下角新建购物车')))
-          else
-            const SizedBox(height: 80),
-        ],
-      ),
     );
   }
 
-  Widget _cartHeader(NotebookShoppingCart cart) {
-    final items = widget.store.cartsOf(cart.id);
+  /// 车行：图标 + 单行标题 + 单行元信息（实付/条目/创建时间）+ chevron。
+  Widget _cartRow(BuildContext context, NotebookShoppingCart cart,
+      List<NotebookShopping> items) {
     final total = items.fold<num>(0, (s, i) => s + i.price);
-    return ListTile(
-      title: Text(cart.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text('${items.length} 项 · 实付 ¥$total'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            onPressed: () => _addItem(cart.id),
+    final metaTime =
+        cart.id.isEmpty ? '零散记录' : DateFormat('M月d日').format(cart.createdAt);
+    return InkWell(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ShoppingCartDetailScreen(
+            store: widget.store,
+            cartId: cart.id,
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => _deleteCart(cart),
+        ),
+      ),
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: cart.id.isEmpty
+                  ? Theme.of(context).colorScheme.surfaceContainerHighest
+                  : Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              cart.id.isEmpty
+                  ? Icons.folder_outlined
+                  : Icons.shopping_bag_outlined,
+              size: 20,
+              color: cart.id.isEmpty
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : Theme.of(context).colorScheme.primary,
+            ),
           ),
-        ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 10, 11),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(20),
+                border:
+                    Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    cart.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 15.5, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '实付 ${formatYuan(total)} · ${items.length} 项 · $metaTime',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Icon(Icons.chevron_right_rounded,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ]),
       ),
     );
   }
 
-  Widget _itemTile(NotebookShopping item) {
-    return ListTile(
-      title: Text(item.item),
-      subtitle: Text('实付 ¥${item.price}'),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete_outline),
-        onPressed: () => _deleteItem(item),
+  /// 未分组伪车行：items 为未分组购物项。
+  Widget _ungroupedPseudoRow(
+      BuildContext context, List<NotebookShopping> ungrouped) {
+    return _cartRow(
+      context,
+      NotebookShoppingCart(
+        id: '',
+        name: '未分组',
+        createdAt: DateTime(2000),
+        note: null,
       ),
-      onTap: () => _editItem(item),
+      ungrouped,
     );
   }
 }

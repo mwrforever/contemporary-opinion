@@ -1,19 +1,20 @@
 // 记事本 UI 测试：Hub 渲染与导航、六子功能增删改流程（内存替身）
 import 'package:daily_planner/models/notebook_ledger.dart';
-import 'package:daily_planner/models/notebook_reading.dart';
-import 'package:daily_planner/models/notebook_recipe.dart';
 import 'package:daily_planner/models/notebook_shopping.dart';
 import 'package:daily_planner/modules/notebook/notebook_tab.dart';
 import 'package:daily_planner/modules/notebook/screens/ledger_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/reading_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/recipe_screen.dart';
+import 'package:daily_planner/modules/notebook/screens/shopping_cart_detail_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/shopping_screen.dart';
+import 'package:daily_planner/modules/notebook/screens/shopping_trend_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/study_screen.dart';
 import 'package:daily_planner/modules/notebook/screens/trip_screen.dart';
 import 'package:daily_planner/modules/notebook/widgets/notebook_report.dart';
 import 'package:daily_planner/modules/notebook/widgets/shopping_item_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 
 import 'support/fake_notebook_store.dart';
 
@@ -54,21 +55,65 @@ void main() {
     expect(find.byType(ShoppingScreen), findsOneWidget);
   });
 
-  testWidgets('购物：新建购物车与添加购物项', (tester) async {
+  testWidgets('购物车列表：单行记录、新建抽屉默认日期标题、点行进子页', (tester) async {
+    await store.addCart(NotebookShoppingCart(
+      id: 'c1', name: '周末生鲜大采购', note: null, createdAt: DateTime(2026, 8, 5, 10),
+    ));
+    await store.addShopping(NotebookShopping(
+      id: 'i1', item: '牛奶', price: 9.5, category: '生鲜食品',
+      note: '', cartId: 'c1', date: '2026-08-05', createdAt: DateTime(2026, 8, 5, 10),
+    ));
     await pump(tester, ShoppingScreen(store: store));
+    // 车行单行元信息：实付 ¥9.50 · 1 项
+    expect(find.text('周末生鲜大采购'), findsOneWidget);
+    expect(find.textContaining('¥9.50'), findsOneWidget);
+    // 新建购物车抽屉：标题默认今天 yyyy年MM月dd日
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '超市');
-    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    final now = DateTime.now();
+    expect(
+      find.text(
+        '${now.year}年${now.month.toString().padLeft(2, '0')}月'
+        '${now.day.toString().padLeft(2, '0')}日',
+      ),
+      findsWidgets,
+    );
+    await tester.tap(find.byIcon(Icons.close_rounded));
     await tester.pumpAndSettle();
-    expect(store.shoppingCarts.single.name, '超市');
+    // 点车行进子页
+    await tester.tap(find.text('周末生鲜大采购'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ShoppingCartDetailScreen), findsOneWidget);
+    expect(find.text('牛奶'), findsOneWidget);
+  });
 
-    await tester.tap(find.byIcon(Icons.add_circle_outline));
+  testWidgets('购物车抽屉：编辑标题保存、删除购物车回收未分组', (tester) async {
+    await store.addCart(NotebookShoppingCart(
+      id: 'c1', name: '旧标题', note: null, createdAt: DateTime(2026, 8, 5, 10),
+    ));
+    await store.addShopping(NotebookShopping(
+      id: 'i1', item: '苹果', price: 5, category: '生鲜食品',
+      note: '', cartId: 'c1', date: '', createdAt: DateTime(2026, 8, 5, 10),
+    ));
+    await pump(tester, ShoppingScreen(store: store));
+    // 进入子页 → 编辑抽屉
+    await tester.tap(find.text('旧标题'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).at(0), '牛奶');
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '新标题');
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
     await tester.pumpAndSettle();
-    expect(store.shopping.single.item, '牛奶');
+    expect(store.shoppingCarts.single.name, '新标题');
+    // 再次编辑 → 删除购物车
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '删除购物车'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+    expect(store.shoppingCarts, isEmpty);
+    expect(store.shopping.single.cartId, '');
   });
 
   testWidgets('收支：新增一笔并更新汇总', (tester) async {
@@ -175,23 +220,24 @@ void main() {
     expect(find.text('收支报表'), findsWidgets);
   });
 
-  testWidgets('购物报表入口打开并渲染', (tester) async {
+  testWidgets('购物报表入口打开并渲染饼图', (tester) async {
     await store.addShopping(
       NotebookShopping(
         id: 'i1',
         item: '牛奶',
         price: 9.5,
-        category: '',
+        category: '生鲜食品',
         note: '',
         cartId: '',
-        date: '2026-08-01',
+        date: DateFormat('yyyy-MM-dd').format(DateTime.now()),
         createdAt: DateTime(2026, 8, 1),
       ),
     );
     await pump(tester, ShoppingScreen(store: store));
-    await tester.tap(find.byIcon(Icons.bar_chart));
+    await tester.tap(find.byIcon(Icons.insert_chart_outlined));
     await tester.pumpAndSettle();
-    expect(find.byType(ReportScreen), findsOneWidget);
+    expect(find.byType(ShoppingTrendScreen), findsOneWidget);
+    expect(find.text('生鲜食品'), findsWidgets);
   });
 
   testWidgets('购物项抽屉：金额/类型/日期保存、折叠展开、金额非法拦截', (tester) async {
