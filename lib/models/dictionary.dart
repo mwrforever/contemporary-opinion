@@ -23,3 +23,18 @@ const List<String> kBillingTypes = <String>[
   '交通',
   '其他',
 ];
+
+/// 购物项类型（单选，默认「其他」；与语音解析共用一套取值）。
+const List<String> kShoppingItemTypes = <String>[
+  '生鲜食品',
+  '日用品',
+  '服饰鞋包',
+  '数码家电',
+  '家居',
+  '美妆个护',
+  '母婴',
+  '运动户外',
+  '书籍文具',
+  '药品保健',
+  '其他',
+];

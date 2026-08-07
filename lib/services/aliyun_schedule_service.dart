@@ -18,6 +18,8 @@ class ScheduledTask {
   final String? note;
   final int? countdownSeconds;
   final int? ringSeconds;
+  final int? intervalSeconds;
+  final int? maxRepeats;
 
   const ScheduledTask({
     required this.title,
@@ -29,6 +31,8 @@ class ScheduledTask {
     this.note,
     this.countdownSeconds,
     this.ringSeconds,
+    this.intervalSeconds,
+    this.maxRepeats,
   });
 
   /// 转换为可持久化的 [Task]。冲突状态由调用方（冲突检测）决定，这里默认 none/effective。
@@ -47,6 +51,11 @@ class ScheduledTask {
         durationMinutes: durationMinutes,
         countdownSeconds: countdownSeconds,
         ringSeconds: ringSeconds,
+        triggerType: maxRepeats != null && maxRepeats! > 0
+            ? TriggerType.delayed
+            : null,
+        intervalSeconds: intervalSeconds,
+        maxRepeats: maxRepeats,
         source: TaskSource.voice,
         createdAt: createdAt,
         notificationId: notificationId,
@@ -399,6 +408,13 @@ $transcript''';
         final rawRing = m['ring_seconds'];
         final ringSeconds =
             (rawRing == null || _asInt(rawRing, 0) == 0) ? null : _asInt(rawRing, 0);
+        // 倒计时重复（DELAYED）：间隔与最大次数；间隔缺省回退到首次倒计时秒数
+        final rawMax = m['max_repeats'];
+        final maxRepeats = _asInt(rawMax, 0) > 0 ? _asInt(rawMax, 0) : null;
+        final rawInterval = _asInt(m['interval_seconds'], 0);
+        final intervalSeconds = rawInterval > 0
+            ? rawInterval
+            : (maxRepeats != null && totalSeconds > 0 ? totalSeconds : null);
 
         final DateTime? scheduledTime;
         final int? countdownSeconds;
@@ -420,6 +436,8 @@ $transcript''';
           note: _asStringOrNull(m['note']),
           countdownSeconds: countdownSeconds,
           ringSeconds: ringSeconds,
+          intervalSeconds: intervalSeconds,
+          maxRepeats: maxRepeats,
         ));
       }
       return result;

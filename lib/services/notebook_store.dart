@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:hive/hive.dart';
 
+import '../data/daos/notebook_daos.dart';
 import '../models/notebook_ledger.dart';
 import '../models/notebook_reading.dart';
 import '../models/notebook_recipe.dart';
@@ -8,232 +8,238 @@ import '../models/notebook_shopping.dart';
 import '../models/notebook_study.dart';
 import '../models/notebook_trip.dart';
 
-/// 记事本仓储：封装各子功能 Hive 读写，对外暴露为 ChangeNotifier（Provider）。
+/// 记事本仓储：基于 SQLite（各模块 DAO），对外暴露为 ChangeNotifier（Provider）。
 ///
-/// 存储策略：**JSON-map 存储**——每个子功能一个 `notebook_<sub>` 盒子，存入
-/// 模型 `toJson()` 得到的 `Map`，读取时经 `fromJson` 还原。这样无需为这一打
-/// 嵌套模型手写 Hive TypeAdapter，降低维护成本；盒子统一在 [init] 中打开。
+/// 公开 API 与旧 Hive 版保持一致；[userId] 归属当前登录用户。
+/// 所有写操作先落库再更新内存并 notifyListeners。
 class NotebookStore extends ChangeNotifier {
-  late Box _shoppingBox;
-  late Box _cartsBox;
-  late Box _ledgerBox;
-  late Box _readingBox;
-  late Box _tripBox;
-  late Box _studyBox;
-  late Box _recipeBox;
+  NotebookStore({
+    required this.userId,
+    ShoppingDao? shoppingDao,
+    LedgerDao? ledgerDao,
+    ReadingDao? readingDao,
+    TripDao? tripDao,
+    StudyDao? studyDao,
+    RecipeDao? recipeDao,
+  })  : _shopping = shoppingDao ?? ShoppingDao(),
+        _ledger = ledgerDao ?? LedgerDao(),
+        _reading = readingDao ?? ReadingDao(),
+        _trip = tripDao ?? TripDao(),
+        _study = studyDao ?? StudyDao(),
+        _recipe = recipeDao ?? RecipeDao();
 
-  int _seq = 0;
+  final int userId;
+  final ShoppingDao _shopping;
+  final LedgerDao _ledger;
+  final ReadingDao _reading;
+  final TripDao _trip;
+  final StudyDao _study;
+  final RecipeDao _recipe;
 
-  /// 进程内唯一 id（时间戳 + 自增，避免同毫秒碰撞）。
-  String _newId() =>
-      '${DateTime.now().microsecondsSinceEpoch}_${_seq++}';
+  List<NotebookShopping> _shoppingItems = [];
+  List<NotebookShoppingCart> _carts = [];
+  List<NotebookLedger> _ledgerItems = [];
+  List<NotebookReading> _readingItems = [];
+  List<NotebookTrip> _tripItems = [];
+  List<NotebookRecipe> _recipeItems = [];
+  List<NotebookCourse> _courses = [];
 
+  /// 从数据库加载当前用户全部记事本数据
   Future<void> init() async {
-    _shoppingBox = await Hive.openBox('notebook_shopping');
-    _cartsBox = await Hive.openBox('notebook_shopping_carts');
-    _ledgerBox = await Hive.openBox('notebook_ledger');
-    _readingBox = await Hive.openBox('notebook_reading');
-    _tripBox = await Hive.openBox('notebook_trip');
-    _studyBox = await Hive.openBox('notebook_study');
-    _recipeBox = await Hive.openBox('notebook_recipe');
+    _shoppingItems = await _shopping.listItems(userId);
+    _carts = await _shopping.listCarts(userId);
+    _ledgerItems = await _ledger.listByUser(userId);
+    _readingItems = await _reading.listByUser(userId);
+    _tripItems = await _trip.listByUser(userId);
+    _recipeItems = await _recipe.listByUser(userId);
+    _courses = await _study.listByUser(userId);
     notifyListeners();
   }
 
-  // ── 通用：按盒子还原为强类型列表 ─────────────────────
-  List<T> _list<T>(Box box, T Function(Map<String, dynamic>) fromJson) =>
-      box.values
-          .whereType<Map>()
-          .map((m) => fromJson(Map<String, dynamic>.from(m)))
-          .toList();
-
   // ── 购物 ─────────────────────────────────────────────
-  List<NotebookShopping> get shopping =>
-      _list(_shoppingBox, NotebookShopping.fromJson);
+  List<NotebookShopping> get shopping => List.unmodifiable(_shoppingItems);
+  List<NotebookShoppingCart> get shoppingCarts => List.unmodifiable(_carts);
+
+  List<NotebookShopping> cartsOf(String cartId) =>
+      _shoppingItems.where((i) => i.cartId == cartId).toList();
 
   Future<void> addShopping(NotebookShopping item) async {
-    final map = item.toJson();
-    final id = _ensureId(map);
-    await _shoppingBox.put(id, map);
+    await _shopping.insertItem(item, userId: userId);
+    _shoppingItems.add(item);
     notifyListeners();
   }
 
   Future<void> deleteShopping(String id) async {
-    await _shoppingBox.delete(id);
+    await _shopping.deleteItem(id);
+    _shoppingItems.removeWhere((i) => i.id == id);
     notifyListeners();
   }
 
-  // ── 购物子购物车 ─────────────────────────────────────
-  List<NotebookShoppingCart> get shoppingCarts =>
-      _list(_cartsBox, NotebookShoppingCart.fromJson);
+  Future<void> updateShopping(NotebookShopping item) async {
+    await _shopping.updateItem(item);
+    final i = _shoppingItems.indexWhere((x) => x.id == item.id);
+    if (i >= 0) _shoppingItems[i] = item;
+    notifyListeners();
+  }
 
   Future<void> addCart(NotebookShoppingCart cart) async {
-    final map = cart.toJson();
-    final id = _ensureId(map);
-    await _cartsBox.put(id, map);
+    await _shopping.insertCart(cart, userId: userId);
+    _carts.add(cart);
     notifyListeners();
   }
 
   Future<void> updateCart(NotebookShoppingCart cart) async {
-    await _cartsBox.put(cart.id, cart.toJson());
+    await _shopping.updateCart(cart);
+    final i = _carts.indexWhere((c) => c.id == cart.id);
+    if (i >= 0) _carts[i] = cart;
     notifyListeners();
   }
 
   Future<void> deleteCart(String id) async {
-    await _cartsBox.delete(id);
+    await _shopping.deleteCart(id);
+    _carts.removeWhere((c) => c.id == id);
+    // 删除购物车后其项回收为未分组（外键 SET NULL），重新拉取同步内存
+    _shoppingItems = await _shopping.listItems(userId);
     notifyListeners();
   }
 
-  /// 返回指定 [cartId] 下的购物项；[cartId] 为空（''）即「未分组」分组。
-  List<NotebookShopping> cartsOf(String cartId) =>
-      shopping.where((e) => e.cartId == cartId).toList();
-
-  // ── 收支账本 ─────────────────────────────────────────
-  List<NotebookLedger> get ledger => _list(_ledgerBox, NotebookLedger.fromJson);
+  // ── 收支 ─────────────────────────────────────────────
+  List<NotebookLedger> get ledger => List.unmodifiable(_ledgerItems);
 
   Future<void> addLedger(NotebookLedger item) async {
-    final map = item.toJson();
-    final id = _ensureId(map);
-    await _ledgerBox.put(id, map);
+    await _ledger.insert(item, userId: userId);
+    _ledgerItems.add(item);
     notifyListeners();
   }
 
   Future<void> deleteLedger(String id) async {
-    await _ledgerBox.delete(id);
+    await _ledger.delete(id);
+    _ledgerItems.removeWhere((i) => i.id == id);
     notifyListeners();
   }
 
   Future<void> updateLedger(NotebookLedger item) async {
-    await _ledgerBox.put(item.id, item.toJson());
+    await _ledger.update(item);
+    final i = _ledgerItems.indexWhere((x) => x.id == item.id);
+    if (i >= 0) _ledgerItems[i] = item;
     notifyListeners();
   }
 
-  // ── 读书清单 ─────────────────────────────────────────
-  List<NotebookReading> get reading =>
-      _list(_readingBox, NotebookReading.fromJson);
+  // ── 读书 ─────────────────────────────────────────────
+  List<NotebookReading> get reading => List.unmodifiable(_readingItems);
 
   Future<void> addReading(NotebookReading item) async {
-    final map = item.toJson();
-    final id = _ensureId(map);
-    await _readingBox.put(id, map);
+    await _reading.insert(item, userId: userId);
+    _readingItems.add(item);
     notifyListeners();
   }
 
   Future<void> deleteReading(String id) async {
-    await _readingBox.delete(id);
+    await _reading.delete(id);
+    _readingItems.removeWhere((i) => i.id == id);
     notifyListeners();
   }
 
   Future<void> updateReading(NotebookReading item) async {
-    await _readingBox.put(item.id, item.toJson());
+    await _reading.update(item);
+    final i = _readingItems.indexWhere((x) => x.id == item.id);
+    if (i >= 0) _readingItems[i] = item;
     notifyListeners();
   }
 
-  // ── 旅游行程 ─────────────────────────────────────────
-  List<NotebookTrip> get trips => _list(_tripBox, NotebookTrip.fromJson);
+  // ── 旅游 ─────────────────────────────────────────────
+  List<NotebookTrip> get trips => List.unmodifiable(_tripItems);
 
   Future<void> addTrip(NotebookTrip item) async {
-    final map = item.toJson();
-    final id = _ensureId(map);
-    await _tripBox.put(id, map);
+    await _trip.insert(item, userId: userId);
+    _tripItems.add(item);
     notifyListeners();
   }
 
   Future<void> deleteTrip(String id) async {
-    await _tripBox.delete(id);
+    await _trip.delete(id);
+    _tripItems.removeWhere((i) => i.id == id);
     notifyListeners();
   }
 
   Future<void> updateTrip(NotebookTrip trip) async {
-    await _tripBox.put(trip.id, trip.toJson());
+    await _trip.update(trip);
+    final i = _tripItems.indexWhere((x) => x.id == trip.id);
+    if (i >= 0) _tripItems[i] = trip;
     notifyListeners();
   }
 
-  // ── 菜谱收藏 ─────────────────────────────────────────
-  List<NotebookRecipe> get recipes => _list(_recipeBox, NotebookRecipe.fromJson);
+  // ── 菜谱 ─────────────────────────────────────────────
+  List<NotebookRecipe> get recipes => List.unmodifiable(_recipeItems);
 
   Future<void> addRecipe(NotebookRecipe item) async {
-    final map = item.toJson();
-    final id = _ensureId(map);
-    await _recipeBox.put(id, map);
+    await _recipe.insert(item, userId: userId);
+    _recipeItems.add(item);
     notifyListeners();
   }
 
   Future<void> deleteRecipe(String id) async {
-    await _recipeBox.delete(id);
+    await _recipe.delete(id);
+    _recipeItems.removeWhere((i) => i.id == id);
     notifyListeners();
   }
 
   Future<void> updateRecipe(NotebookRecipe item) async {
-    await _recipeBox.put(item.id, item.toJson());
+    await _recipe.update(item);
+    final i = _recipeItems.indexWhere((x) => x.id == item.id);
+    if (i >= 0) _recipeItems[i] = item;
     notifyListeners();
   }
 
-  // ── 学习记录（课程维度）──────────────────────────────
-  List<NotebookCourse> get courses =>
-      _list(_studyBox, NotebookCourse.fromJson);
+  // ── 学习 ─────────────────────────────────────────────
+  List<NotebookCourse> get courses => List.unmodifiable(_courses);
 
   Future<void> addCourse(NotebookCourse course) async {
-    final map = course.toJson();
-    final id = _ensureId(map);
-    await _studyBox.put(id, map);
+    await _study.insert(course, userId: userId);
+    _courses.add(course);
     notifyListeners();
   }
 
   Future<void> updateCourse(NotebookCourse course) async {
-    await _studyBox.put(course.id, course.toJson());
+    await _study.update(course);
+    final i = _courses.indexWhere((x) => x.id == course.id);
+    if (i >= 0) _courses[i] = course;
     notifyListeners();
   }
 
   Future<void> deleteCourse(String id) async {
-    await _studyBox.delete(id);
+    await _study.delete(id);
+    _courses.removeWhere((c) => c.id == id);
     notifyListeners();
   }
 
-  /// 在指定课程下追加一条学习记录（语音/手动录入均走此入口）。
   Future<void> addRecord(String courseId, StudyRecord record) async {
-    final raw = _studyBox.get(courseId);
-    if (raw is! Map) return;
-    final course = NotebookCourse.fromJson(Map<String, dynamic>.from(raw));
-    final map = record.toJson();
-    final id = _ensureId(map);
-    final records = List<StudyRecord>.from(course.records)
-      ..add(record.copyWith(id: id));
-    await _studyBox.put(
-        courseId, course.copyWith(records: records).toJson());
-    notifyListeners();
+    final i = _courses.indexWhere((c) => c.id == courseId);
+    if (i < 0) return;
+    final updated = _courses[i].copyWith(
+      records: [..._courses[i].records, record],
+    );
+    await updateCourse(updated);
   }
 
   Future<void> deleteRecord(String courseId, String recordId) async {
-    final raw = _studyBox.get(courseId);
-    if (raw is! Map) return;
-    final course = NotebookCourse.fromJson(Map<String, dynamic>.from(raw));
-    final records =
-        course.records.where((r) => r.id != recordId).toList();
-    await _studyBox.put(
-        courseId, course.copyWith(records: records).toJson());
-    notifyListeners();
+    final i = _courses.indexWhere((c) => c.id == courseId);
+    if (i < 0) return;
+    final updated = _courses[i].copyWith(
+      records: _courses[i].records.where((r) => r.id != recordId).toList(),
+    );
+    await updateCourse(updated);
   }
 
-  /// 更新课程下某条学习记录（编辑后落库）。
   Future<void> updateRecord(String courseId, StudyRecord record) async {
-    final raw = _studyBox.get(courseId);
-    if (raw is! Map) return;
-    final course = NotebookCourse.fromJson(Map<String, dynamic>.from(raw));
-    final records = course.records
-        .map((r) => r.id == record.id ? record : r)
-        .toList();
-    await _studyBox.put(
-        courseId, course.copyWith(records: records).toJson());
-    notifyListeners();
-  }
-
-  // ── 内部工具 ─────────────────────────────────────────
-  /// 若模型 id 为空，生成新 id 并写回 map，返回最终使用的 id。
-  String _ensureId(Map<String, dynamic> map) {
-    final existing = map['id']?.toString() ?? '';
-    if (existing.isNotEmpty) return existing;
-    final id = _newId();
-    map['id'] = id;
-    return id;
+    final i = _courses.indexWhere((c) => c.id == courseId);
+    if (i < 0) return;
+    final updated = _courses[i].copyWith(
+      records: [
+        for (final r in _courses[i].records)
+          if (r.id == record.id) record else r,
+      ],
+    );
+    await updateCourse(updated);
   }
 }

@@ -41,6 +41,57 @@
 
 ---
 
+## 三、阶段 1 重构快照（2026-08-05 起，分支 feat/phase1-core）
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| Task 1 依赖重排 | `[已完成]` | 锁最新稳定版（sqflite 2.4.3 / flutter_local_notifications 22.2.0 / permission_handler 13.0.0 / audioplayers 6.8.1 / record 7.1.1 等）；win32 ^5/^6 传递冲突 → share_plus 12.x、package_info_plus 9.x 兼容线 |
+| Android 平台配置 | `[已完成]` | 开启 core library desugaring；权限：RECORD_AUDIO / POST_NOTIFICATIONS / SCHEDULE_EXACT_ALARM / WAKE_LOCK / VIBRATE |
+| 测试基线 | `[已完成]` | 292 通过；11 项旧 aliyun ASR 转写测试因 record 7.x 升级失效，按计划删除（阶段 2 语音重写） |
+| flutter analyze | `⚠️ 0 error / 51 info` | info 主要为过渡期 dev 依赖提示（hive/web/speech/just_audio，Task 10 清理）与存量风格项 |
+| debug APK 构建 | `[已完成]` | 2026-08-05 产出 `build/app/outputs/flutter-apk/app-debug.apk`；构建链修复：file_picker→file_selector（其 Android 端 Kotlin 1.8.22 与 AGP 9/Gradle 9 不兼容，产物为空 jar）、app compileSdk=37（permission_handler 13 要求）、`kotlin.incremental=false`（规避增量缓存崩溃）、签名块 DSL 修复（`java.util` 被 Gradle `java` 扩展遮蔽）、sqlite3 原生资产下载需本地代理（`HTTPS_PROXY=127.0.0.1:7897`）注入 |
+| 测试基线（更新） | `[已完成]` | 312 通过 / 1 已知遗留失败（`audio_service_test.dart`，Task 14 重写响铃时替换） |
+| 环境遗留 | `[部分完成]` | Android SDK 已配置 `D:\code\envs\android\sdk`（API 37 junction `android-37`→`android-37.0` 已建）；开发人员模式已开启；cmdline-tools 组件缺失（不影响构建，可后补）；maven.google.com 偶发瞬时超时 |
+| Task 6+7 路由守卫与登录/注册页 | `[已完成]` | 已登录直达主框架（三 Tab：任务/记事本占位 + 我的登出）；未登录品牌页 1.2s 后进登录页；登出回登录页；登录/注册表单校验（必填/密码长度/一致性/唯一）；新增 `test/support/fake_auth_service.dart` 解耦 widget 测试与 FFI 异步 |
+| Task 8 设计 Token 落地 | `[已完成]` | `app_theme.dart` 精确色值（accent #0E8C7F 等）、浅深 ColorScheme 显式锁定、文本层级 20/800·16/600·14/400、组件主题（按钮 52/卡片 20/输入框 12/chip 胶囊/导航栏/分段控件）、浅色按钮用 accentStrong 保对比度；`buildAppTheme([Brightness])` |
+| Task 9 旧数据迁移 | `[已完成]` | `LegacyMigrationService` + 冻结 `LegacyTask` 适配器（与旧 TaskAdapter 二进制一致）；升级后首个注册用户（通常 id=1）承接旧任务；幂等标记 `app_meta.legacy_migrated`；失败静默；登录后钩子 `onLoggedIn` 注入（生产默认迁移，测试空实现）；记事本旧数据待阶段 3 建表后迁移 |
+| Task 10 清理 Web/死代码 | `[已完成]` | 删除 `audio_capture_web/audio_service_web/notification_service_web`、`web/` 目录与 `run_web.bat/.sh`、`test/web_adapt_test.dart`；三个能力抽象改为纯 IO 导出；pubspec 移除 `record_web`/`web`（过渡依赖剩余：hive_ce 至 Task 12、speech_to_text 至 Task 15、just_audio 至 Task 14） |
+| Task 11+12 Task 模型/DAO/Store 迁移 SQLite | `[已完成]` | Task 去 Hive（纯 Dart + toMap/fromMap，id 保持 UUID，tasks.id 改 TEXT 主键）；新增 `TaskDao`（user_id 隔离/状态/生效过滤）；`TaskStore` 换 SQLite 实现且对外方法签名不变；删除 Hive 适配器两个旧测试；task_test 移除 Hive round-trip、改由 task_model/task_dao/task_store 新测覆盖 |
+| Task 13 冲突检测回归 | `[已完成]` | 新 Task 模型下 conflict_detector_test 18/18 全绿（规则未变） |
+| Task 14 提醒调度重构 | `[已完成]` | 新增 `ReminderScheduler` 接口 + IO 实现（隔离 flutter_local_notifications 22）；ReminderService 注入化（scheduler/audio/tts），去除 Web 分支；AudioService 引入 `RingPlayer` 抽象并修复历史遗留响铃测试；just_audio 移入主依赖（Java 实现，AGP 9/Gradle 9 兼容，替代 FEATURES 草案 audioplayers）；**全量测试 333/333 全绿（0 失败）** |
+| Task 15 任务页视觉落地 | `[已完成]` | 旧 Hive 任务/记事本 UI 子树整体拆除（TabShell/任务列表/语音页/记事本页与详情/设置页/旧卡片/旧组件 + 10 个旧测试）；新 TasksTab 按设计稿落地（筛选胶囊+角标、五态任务卡、冲突确认覆盖/改时间换资源、滑动删除二次确认、长按选择批量删除、Speed Dial），新 AddTaskScreen 分区表单（指定时间/倒计时、重复自定义星期、过去时间拦截）；MainPage 任务 Tab 接入 SQLite TaskStore + ReminderService；新增 22 个 UI/状态测试；移除 speech_to_text 依赖与 SpeechService 兜底；**全量测试 283/283 全绿** |
+| Task 16 我的页/备份/提醒引导 | `[已完成]` | 新增 `ProfilePage`（昵称/默认响铃编辑、JSON 导出导入、提醒设置入口、退出登录）与 `PermissionGuideScreen`（通知/电池优化/自启动清单 + 去开启）；新增 `BackupService`（导出不含 password_hash、导入容错/格式校验）；`AuthService.updateProfile` 持久化资料；MainPage「我的」Tab 接入；新增 11 个测试；**全量测试 294/294 全绿** |
+| Task 17 集成验证 | `[已完成]` | `flutter analyze` 0 error；全量测试 294/294 全绿；debug APK 构建成功（`build/app/outputs/flutter-apk/app-debug.apk`）；真机冒烟清单落档 `docs/smoke-checklist.md`（账户/任务/冲突/提醒/备份/主题 6 组）；遗留：Android 厂商后台保活矩阵、cmdline-tools 组件、应用图标替换（品牌文档方案）、商店长描述 → 阶段 4 |
+
+---
+
+## 四、阶段 2 语音规划快照（2026-08-05 起，分支 feat/phase1-core）
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| P2-1 Task.note | `[已完成]` | 模型补充 note 字段并 round-trip |
+| P2-2 语音适配器 | `[已完成]` | ScheduledTask/ParsedTask → Task（倒计时折算、note、voice 来源） |
+| P2-3 语音规划页 | `[已完成]` | 云端录音（ASR）或离线文本输入（系统输入法语音转文字）→ 排期/NLP 解析 → 四态预览（冲突三操作/待定设时间/弱提醒/已过去跳过）→ 确认添加；改时间/换资源为手动编辑对话框 |
+| P2-4 反馈卡 | `[已完成]` | TaskFeedbackCard 摘要 + TasksTab 接入 Speed Dial 语音入口 |
+| P2-5 提示词预载 | `[已完成]` | main 启动预载 PromptLoader（失败静默回落 NLP）；麦克风权限流程在 P2-3 内 |
+| 阶段 2 验证 | `[已完成]` | analyze 0 error；**全量测试 308/308 全绿**；待真机验证语音链路（需 DASHSCOPE_API_KEY） |
+
+---
+
+## 五、阶段 3 记事本快照（2026-08-05 起，分支 feat/phase1-core）
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| P3-1 SQLite v2 十表 | `[已完成]` | 购物 2/账本 1/读书 1/旅游 3/学习 2/菜谱 1，user_id 外键 + 嵌套 JSON 列 + 删购物车孤儿回收 |
+| P3-2 六模块 DAO | `[已完成]` | 旅游三层级联（UUID+sort 保序）、学习课程+记录级联、菜谱 JSON 列；10 个 DAO 测试 |
+| P3-3 NotebookStore | `[已完成]` | SQLite 实现、API 不变、user_id 注入；store 测试重写 |
+| P3-4 旧数据迁移 | `[已完成]` | LegacyNotebookMigration + 任务迁移共用登录钩子；hive_ce 归位主依赖（运行时迁移功能） |
+| P3-5 Hub | `[已完成]` | 2 列网格六卡 + 条目数，接入 MainPage |
+| P3-6 六详情页 | `[已完成]` | 购物/收支/读书/旅游(天+打卡点嵌套)/学习(课程+记录)/菜谱，全部增删改 |
+| P3-7 报表与集成 | `[已完成]` | 收支/购物报表入口复用自绘柱状图（日/月/年 6 桶）；analyze 0 error；**全量测试 327/327 全绿**；debug APK 构建成功 |
+
+---
+
 ## 三、待办与阻塞项
 
 | 编号 | 任务名称 | 优先级 | 状态 | 阻塞 / 说明 |
@@ -185,3 +236,29 @@ flutter build web --release   # 产物在 build/web，可托管 / CloudStudio �
 - **设计令牌纪律**：全部新/改 UI 复用 `AppTheme`（accent/accentSoft/danger/radius/space/elevation），未自创配色/圆角/阴影；枚举取值与日期格式 `yyyy-MM-dd` 严格对齐 `assets/prompts/notebook_voice_trip.yaml` 与 §7 约定。
 - **相对导入深度**：`lib/modules/notebook/screens/*` 与 `widgets/*` 引用 `lib/` 顶层用 `../../../`，同目录用 `./`/`../`，已正确（无 `../../` 不足坑）。
 - **实现说明**：`FilterTabBar` 自持 `TabController`（随生命周期创建/释放，更内聚；与类图中 FilterTabBar 组合 TabController 一致），而非由 `TasksTab` 持有——属类图契约内的合理实现选择。`ConfirmDialog` 统一封装破坏性确认，T02 清空与 T04 删除打卡点均复用。
+
+---
+
+## 八、阶段 4 任务模块整改快照（2026-08-06）
+
+> 依据已批准设计稿 `design/ui-mockup-task-v2/index.html` + 实施计划 `docs/superpowers/plans/2026-08-06-task-module-fix.md`。
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| 数据层 v3 迁移 | `[已完成]` | tasks 表新增 trigger_type/freq_type/freq_interval/end_at/interval_seconds/max_repeats/repeat_count/next_fire_time/prev_fire_time；旧数据归位（repeat→trigger_type、missed→pending）；新增 user_settings 表（提醒方式/震动/音量） |
+| 状态收敛 | `[已完成]` | Tab 由 6 收敛为 4：全部/进行中/冲突/已完成；移除待办、逾期与 missed 状态；冲突不进进行中；已完成只展示死任务（一次性完成/倒计时重复达上限） |
+| 排序口径 | `[已完成]` | 所有列表按创建时间降序（DAO + Store + Fake 替身同步） |
+| 任务卡片 V2 | `[已完成]` | 状态图标打头、标题/元信息单行省略；冲突仅行内标记；长按进入选择模式 |
+| 详情抽屉 | `[已完成]` | 点记录进可编辑表单（时间/时长/资源/响铃 + 倒计时间隔/次数），冲突原因卡（确认覆盖/改时间换资源），单一「完成」按钮保存自动返回；完成操作收进详情 |
+| 批量删除 | `[已完成]` | 底部「删除（N）/ 取消」双按钮，移除右上角图标 |
+| 语音规划浮层 | `[已完成]` | 同页底部浮层不跳转；打字 + 录音追加光标处；单层环停止键 + 耳朵音波动效；排期结果同浮层展示冲突标记；逐条保存容错（修复多任务只保存一个） |
+| 倒计时重复 | `[已完成]` | DELAYED 型：interval_seconds × max_repeats + repeat_count；手动新建（倒计时模式重复次数）与 LLM 解析（interval_seconds/max_repeats）双通道打通 |
+| 铃铛提醒方式 | `[已完成]` | 静音/语音互斥 + 震动独立开关 + 音量滑杆，持久化 user_settings |
+| 提醒链路修复 | `[已完成]` | **根因：ReminderService.init/scheduleAll 从未被调用**；MainPage 登录后接线 init+reloadSettings+scheduleAll；静音不播报、音量作用于 TTS |
+| 验证 | `[已完成]` | `flutter analyze` 0 error（仅存量 info/警告）；`flutter test` **327/327 全绿**；删除因改动失效的旧测试（task_test、旧任务卡/筛选/语音页用例） |
+
+### 遗留（下一轮）
+- LLM 多任务“只保存一个”已做逐条容错 + 解析回归测试加固；真机再验证实际转写→排期→入库链路。
+- 到点语音提醒已补齐初始化接线；真机验证厂商后台保活矩阵（电池优化/自启动）。
+- 提醒音量作用于 TTS 播报；系统通知铃声音量由系统设置控制（Android 通知渠道）。
+- 记事本购物车 / 我的模块（导入导出确认、权限状态展示、深色模式三档）待按同一流程推进。

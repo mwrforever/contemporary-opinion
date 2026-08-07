@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/aliyun_config.dart';
 import 'audio_capture.dart';
-import 'speech_service.dart';
+import 'pcm_resampler.dart';
 
 /// 语音识别被主动取消（页面关闭 / 中止），不应触发兜底或错误提示。
 class _AsrCancelled implements Exception {
@@ -21,14 +21,11 @@ class _AsrCancelled implements Exception {
 /// （WAV）传入；属于「录完一段再识别」的文件识别，而非实时流式。
 /// 鉴权：仅需 [apiKey]（DashScope API Key），与排期服务 [AliyunScheduleService] 共用。
 ///
-/// **兜底**：未配置 key / 连接失败 / 解析异常时，自动退回设备端
-/// [SpeechService]（speech_to_text），保证 Demo 在无云端配置时仍可录音。
+/// 未配置 key / 连接失败时返回空串（FEATURES 已移除设备端 speech_to_text 兜底）。
 class AliyunAsrService {
   final String apiKey;
   final String model;
   final String endpoint;
-  final SpeechService? fallback;
-
   http.Client _client;
   final AudioCapture _capture;
 
@@ -43,7 +40,6 @@ class AliyunAsrService {
     required this.apiKey,
     this.model = AliyunConfig.asrModel,
     this.endpoint = AliyunConfig.chatCompletionsUrl,
-    this.fallback,
     http.Client? client,
     AudioCapture? capture,
   })  : _client = client ?? http.Client(),
@@ -55,7 +51,7 @@ class AliyunAsrService {
   ///
   /// [onPartial] 在识别完成后回传最终结果。录音**不会自动超时停止**，
   /// 只能由用户点击停止（[stop]）或取消（[cancel]）才结束；若未配置云端，
-  /// 则委托 [fallback]（设备端识别）。
+  /// 未配置云端时返回空串（无设备端兜底）。
   Future<String> transcribe({
     required void Function(String) onPartial,
   }) async {
@@ -72,16 +68,14 @@ class AliyunAsrService {
     _aborted = false;
     _stopCompleter = Completer<void>();
     try {
-      if (!_configured || fallback == null) {
-        return await _transcribeFallback(onPartial);
-      }
+      if (!_configured) return '';
       try {
         return await _transcribeCloud(onPartial);
       } on _AsrCancelled {
         rethrow;
       } catch (_) {
         if (_stopRequested || _aborted) rethrow;
-        return await _transcribeFallback(onPartial);
+        return '';
       }
     } finally {
       _active = false;
@@ -122,36 +116,6 @@ class AliyunAsrService {
     } catch (_) {}
   }
 
-  Future<String> _transcribeFallback(void Function(String) onPartial) async {
-    final sp = fallback;
-    if (sp == null) throw StateError('未配置云端 ASR，且无本地兜底');
-    if (!sp.available) {
-      final ok = await sp.init();
-      if (!ok) throw StateError('本地语音识别不可用');
-    }
-    final completer = Completer<String>();
-    var last = '';
-    await sp.startListening(
-      onText: (text) {
-        last = text;
-        onPartial(text);
-      },
-      onComplete: () {
-        if (!completer.isCompleted) completer.complete(last);
-      },
-    );
-    await Future.any([completer.future, _stopCompleter!.future]);
-    if (_aborted) {
-      await sp.stopListening();
-      throw const _AsrCancelled();
-    }
-    if (_stopRequested) {
-      await sp.stopListening();
-      if (!completer.isCompleted) completer.complete(last);
-    }
-    return completer.future;
-  }
-
   Future<String> _transcribeCloud(
     void Function(String) onPartial,
   ) async {
@@ -185,8 +149,15 @@ class AliyunAsrService {
       offset += c.lengthInBytes;
     }
 
+    // 1.5) 按真实采样率重采样到 16k 单声道。Web 端 record_web 会把请求的 16k
+    // 改写为设备真实率（常 48000），若直接用 16k 封 WAV 会 3× 错配导致阿里云
+    // Qwen3-ASR 解码出变速/乱码；移动端恒为 16k 则不重采样。
+    final realRate = _capture.realSampleRate;
+    final finalPcm =
+        realRate == 16000 ? pcm : resamplePcm16(pcm, realRate, 16000);
+
     // 2) 封装为 WAV（Qwen3-ASR 接受 data:audio/wav;base64,...）
-    final wav = buildWav(pcm,
+    final wav = buildWav(finalPcm,
         sampleRate: 16000, numChannels: 1, bitsPerSample: 16);
     final dataUrl = 'data:audio/wav;base64,${base64Encode(wav)}';
 

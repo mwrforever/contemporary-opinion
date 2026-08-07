@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -6,12 +8,14 @@ plugins {
 
 android {
     namespace = "com.dailyplanner.daily_planner"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler 13 / 新插件要求 SDK 37+，显式指定（向后兼容低版本设备）
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // flutter_local_notifications 22.x 需要 core library desugaring
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -26,13 +30,36 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    // 发布签名：CI/本地存在 android/key.properties 时用正式签名；否则回退 debug 签名，
+    // 保证 `flutter build apk --release` 在无密钥时也能产出可安装的 APK。
+    signingConfigs {
+        create("release") {
+            val keyPropsFile = rootProject.file("key.properties")
+            if (keyPropsFile.exists()) {
+                val keyProps = Properties().apply {
+                    keyPropsFile.inputStream().use { load(it) }
+                }
+                storeFile = file(keyProps.getProperty("storeFile"))
+                storePassword = keyProps.getProperty("storePassword")
+                keyAlias = keyProps.getProperty("keyAlias")
+                keyPassword = keyProps.getProperty("keyPassword")
+            } else {
+                initWith(signingConfigs.getByName("debug"))
+            }
         }
     }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 kotlin {

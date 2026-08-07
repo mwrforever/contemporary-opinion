@@ -1,96 +1,74 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest.dart' as tzdata;
-import 'package:timezone/timezone.dart' as tz;
 
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'
+    show DateTimeComponents;
+
+import '../data/daos/settings_dao.dart';
+import '../data/models/reminder_settings.dart';
 import '../models/task.dart';
 import 'audio_service.dart';
-import 'notification_service.dart';
+import 'reminder_scheduler.dart';
 import 'task_store.dart';
 import 'tts_service.dart';
-import 'settings_service.dart';
 
 /// 提醒编排服务：
-///  - 通过本地通知做精确调度（即使应用被杀，系统也会弹出通知）
-///  - 应用存活时，用 Timer 在到点触发"响铃 + 语音播报"
+///  - 通过本地通知精确调度（应用被杀仍弹），重复任务派生多通知 id
+///  - 应用存活时用 Timer 到点触发「响铃 + 中文语音循环播报」
 ///  - 通知被点击时同样触发响铃 + 播报
+///
+/// 依赖 [ReminderScheduler]/[AudioService]/[TtsService] 均可注入，便于单元测试。
 class ReminderService {
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
-  final AudioService audio = AudioService();
-  final TtsService tts = TtsService();
-  // 平台通知抽象：移动端走 flutter_local_notifications，Web 走 W3C Notification。
-  final NotificationService _notifier = NotificationService();
+  ReminderService({
+    ReminderScheduler? scheduler,
+    AudioService? audio,
+    TtsService? tts,
+    this.enableInAppTimers = true,
+    this.voiceLoopTotal = const Duration(seconds: 10),
+    this.voiceGap = const Duration(seconds: 2),
+  })  : _scheduler = scheduler ?? ReminderSchedulerIo(),
+        audio = audio ?? AudioService(),
+        tts = tts ?? TtsService();
+
+  final ReminderScheduler _scheduler;
+  final AudioService audio;
+  final TtsService tts;
+
+  /// 应用存活期 Timer 响铃开关；无头/测试环境可关闭
+  final bool enableInAppTimers;
 
   final Map<String, Timer> _timers = {};
-  /// 正在播报中的语音提醒任务 id 集合；加入即表示要求立即停止该任务的响铃与播报。
   final Set<String> _alertStopFlags = {};
   TaskStore? _store;
-
-  final SettingsService? settings;
-
-  ReminderService({this.settings});
-
-  static const String _channelId = 'reminder_channel';
+  ReminderSettings _settings = const ReminderSettings();
 
   /// 语音提醒循环总时长：到点后语音播报循环播放，直至该时长结束。
-  static const Duration _voiceLoopTotal = Duration(seconds: 10);
-  /// 每条语音播报之间的间隔。
-  static const Duration _voiceGap = Duration(seconds: 2);
+  /// 可注入以便测试（生产默认 10 秒）。
+  final Duration voiceLoopTotal;
+
+  /// 语音播报之间的间隔（可注入以便测试，生产默认 2 秒）。
+  final Duration voiceGap;
 
   Future<void> init(TaskStore store) async {
     _store = store;
-    tzdata.initializeTimeZones();
-    try {
-      tz.setLocalLocation(tz.getLocation('Asia/Shanghai'));
-    } catch (_) {
-      // 失败则使用设备本地时区
-    }
     await audio.init();
     await tts.init();
-    await _notifier.init();
-
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const ios = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-    await _plugin.initialize(
-      const InitializationSettings(android: android, iOS: ios),
-      onDidReceiveNotificationResponse: (resp) {
-        if (resp.payload != null) _fireAlertById(resp.payload!);
-      },
-    );
-
-    final channel = AndroidNotificationChannel(
-      _channelId,
-      '任务提醒',
-      description: '每日规划助手的任务提醒',
-      importance: Importance.max,
-      playSound: true,
-      enableVibration: true,
-      enableLights: true,
-    );
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+    await _scheduler.init(onPayload: _fireAlertById);
   }
 
-  /// 申请通知与精确闹钟权限（Android 12+）。
-  Future<void> ensurePermissions() async {
-    final androidImpl = _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-    if (androidImpl != null) {
-      await androidImpl.requestNotificationsPermission();
-      await androidImpl.requestExactAlarmsPermission();
+  /// 申请通知与精确闹钟权限
+  Future<void> ensurePermissions() => _scheduler.requestPermissions();
+
+  /// 读取当前用户的提醒设置（静音/震动/语音 + 音量），供到点播报分支使用。
+  Future<void> reloadSettings(int userId) async {
+    try {
+      _settings = await SettingsDao().get(userId);
+    } catch (_) {
+      // 设置读取失败时保持默认（语音播报 + 震动）
+      _settings = const ReminderSettings();
     }
   }
 
-  /// 启动时重新调度所有未完成任务。
+  /// 启动时重新调度所有未完成任务
   Future<void> scheduleAll() async {
     if (_store == null) return;
     for (final t in _store!.all) {
@@ -98,7 +76,7 @@ class ReminderService {
     }
   }
 
-  /// 任务增改后调用：完成则取消，否则重新调度。
+  /// 任务增改后调用：完成则取消，否则重新调度
   Future<void> notifyTaskChanged(Task task) async {
     if (task.status == TaskStatus.done) {
       await cancelTask(task);
@@ -115,35 +93,19 @@ class ReminderService {
 
     final ids = _notificationIdsFor(task);
     for (final entry in ids.entries) {
-      final id = entry.key;
-      final when = entry.value;
-      final match = _matchComponents(task);
-      await _plugin.zonedSchedule(
-        id,
-        '规划提醒',
-        task.title,
-        tz.TZDateTime.from(when, tz.local),
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            _channelId,
-            '任务提醒',
-            channelDescription: '每日规划助手的任务提醒',
-            importance: Importance.max,
-            priority: Priority.high,
-            playSound: true,
-          ),
-          iOS: const DarwinNotificationDetails(),
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-        matchDateTimeComponents: match,
+      await _scheduler.zonedSchedule(
+        id: entry.key,
+        title: '规划提醒',
+        body: task.title,
+        when: entry.value,
+        match: _matchComponents(task),
         payload: task.id,
       );
     }
     _scheduleInAppTimer(task);
   }
 
+  /// 按重复类型派生通知 id（工作日/自定义星期以 base*10+w 派生子 id）
   Map<int, DateTime> _notificationIdsFor(Task task) {
     final base = task.notificationId;
     if (task.scheduledTime == null) return {};
@@ -203,9 +165,9 @@ class ReminderService {
   Future<void> cancelTask(Task task) async {
     _stopAlert(task.id);
     final base = task.notificationId;
-    await _plugin.cancel(base);
+    await _scheduler.cancel(base);
     for (final w in const [1, 2, 3, 4, 5, 6, 7]) {
-      await _plugin.cancel(base * 10 + w);
+      await _scheduler.cancel(base * 10 + w);
     }
     _timers[task.id]?.cancel();
     _timers.remove(task.id);
@@ -213,6 +175,7 @@ class ReminderService {
 
   /// 应用存活时用 Timer 触发响铃 + 播报，重复任务到点后续约。
   void _scheduleInAppTimer(Task task) {
+    if (!enableInAppTimers) return;
     _timers[task.id]?.cancel();
     final when = _nextFire(task);
     if (when == null) return;
@@ -242,18 +205,8 @@ class ReminderService {
     if (task != null && task.status != TaskStatus.done) _fireAlert(task);
   }
 
-  /// 到点触发：弹出 Web 通知，并并发启动「响铃 + 语音循环播报」。
-  /// 语音播报循环规则：每条播完后间隔 [_voiceGap]，循环直至 [_voiceLoopTotal] 总时长结束。
+  /// 到点触发：并发启动「响铃 + 语音循环播报」。
   void _fireAlert(Task task) {
-    // Web 无系统级未来调度，由 in-app Timer 触发后用浏览器通知做即时提醒
-    if (kIsWeb) {
-      try {
-        _notifier.ensurePermissions();
-        _notifier.showImmediate(title: '规划提醒', body: task.title);
-      } catch (_) {
-        // 通知不可用忽略
-      }
-    }
     unawaited(_runAlert(task));
   }
 
@@ -263,29 +216,31 @@ class ReminderService {
     final text = _speakText(task);
     final start = DateTime.now();
 
-    // 响铃：在整段循环窗口内持续（audio.playRing 内部每 2 秒重播一次），fire-and-forget。
-    unawaited(audio.playRing(duration: _voiceLoopTotal));
+    // 静音模式：到点不发声音（仅依赖系统通知展示）；否则响铃 + 语音播报
+    if (_settings.mode != ReminderMode.mute) {
+      unawaited(audio.playRing(duration: voiceLoopTotal));
 
-    while (DateTime.now().difference(start) < _voiceLoopTotal) {
-      if (_alertStopFlags.contains(task.id)) break;
-      try {
-        await tts.speakAndAwait(text);
-      } catch (_) {
-        // 播报不可用（如部分 Web 环境）忽略，继续走完窗口
+      while (DateTime.now().difference(start) < voiceLoopTotal) {
+        if (_alertStopFlags.contains(task.id)) break;
+        try {
+          await tts.setVolume(_settings.volume / 100);
+          await tts.speakAndAwait(text);
+        } catch (_) {
+          // 播报不可用则忽略，继续走完窗口
+        }
+        if (_alertStopFlags.contains(task.id)) break;
+        if (DateTime.now().difference(start) >= voiceLoopTotal) break;
+        await Future.delayed(voiceGap);
       }
-      if (_alertStopFlags.contains(task.id)) break;
-      // 已到窗口末尾则不再空等间隔
-      if (DateTime.now().difference(start) >= _voiceLoopTotal) break;
-      await Future.delayed(_voiceGap);
     }
     _alertStopFlags.remove(task.id);
   }
 
   /// 立即中断某任务的响铃与语音播报（由取消任务 / 全局停止调用）。
-  void _stopAlert(String taskId) {
+  Future<void> _stopAlert(String taskId) async {
     _alertStopFlags.add(taskId);
     try {
-      audio.stopRing();
+      await audio.stopRing();
     } catch (_) {}
     try {
       tts.interrupt();
