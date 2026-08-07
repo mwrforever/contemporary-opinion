@@ -42,8 +42,7 @@ void main() {
         NotebookShopping(
           id: 'i1',
           item: '牛奶',
-          expectedPrice: 10,
-          actualPrice: 9.5,
+          price: 9.5,
           category: '食品',
           note: '',
           cartId: 'c1',
@@ -67,8 +66,7 @@ void main() {
       final item = NotebookShopping(
         id: 'i1',
         item: '苹果',
-        expectedPrice: 5,
-        actualPrice: 4,
+        price: 4,
         category: '',
         note: '',
         cartId: '',
@@ -80,8 +78,7 @@ void main() {
         NotebookShopping(
           id: 'i1',
           item: '苹果',
-          expectedPrice: 6,
-          actualPrice: 5,
+          price: 5,
           category: '',
           note: '特价',
           cartId: '',
@@ -90,7 +87,7 @@ void main() {
         ),
       );
       final updated = (await dao.listItems(1)).single;
-      expect(updated.expectedPrice, 6);
+      expect(updated.price, 5);
       expect(updated.note, '特价');
       await dao.deleteItem('i1');
       expect(await dao.listItems(1), isEmpty);
@@ -102,8 +99,7 @@ void main() {
         NotebookShopping(
           id: 'i1',
           item: '用户1的',
-          expectedPrice: 1,
-          actualPrice: 1,
+          price: 1,
           category: '',
           note: '',
           cartId: '',

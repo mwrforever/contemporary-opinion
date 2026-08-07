@@ -100,6 +100,16 @@ void main() {
     expect(rows.length, 10);
   });
 
+  test('shopping_items 表为 v4 结构：含 price、无 expected_price/actual_price', () async {
+    final db = await DatabaseHelper.instance.database;
+    final cols = (await db.rawQuery('PRAGMA table_info(shopping_items)'))
+        .map((c) => c['name'])
+        .toList();
+    expect(cols, contains('price'));
+    expect(cols, isNot(contains('expected_price')));
+    expect(cols, isNot(contains('actual_price')));
+  });
+
   test('shopping_items 删除购物车后 cart_id 置空（未分组回收）', () async {
     final db = await DatabaseHelper.instance.database;
     await db.insert('users', {
@@ -118,6 +128,7 @@ void main() {
       'user_id': 1,
       'cart_id': 'cart-1',
       'item': '牛奶',
+      'price': 9.5,
       'created_at': '2026-08-05T00:00:00',
     });
     await db.delete('shopping_carts', where: 'id = ?', whereArgs: ['cart-1']);

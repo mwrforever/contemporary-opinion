@@ -62,17 +62,18 @@ void main() {
     final items = await Hive.openBox('notebook_shopping');
     await items.put(
       'i1',
-      NotebookShopping(
-        id: 'i1',
-        item: '牛奶',
-        expectedPrice: 10,
-        actualPrice: 9.5,
-        category: '食品',
-        note: '',
-        cartId: 'c1',
-        date: '2026-08-05',
-        createdAt: DateTime(2026, 8, 1),
-      ).toJson(),
+      // 模拟存量旧 Hive 数据（含预期/实付双字段），验证 fromJson 实付优先兜底
+      {
+        'id': 'i1',
+        'item': '牛奶',
+        'expected_price': 10,
+        'actual_price': 9.5,
+        'category': '食品',
+        'note': '',
+        'cartId': 'c1',
+        'date': '2026-08-05',
+        'createdAt': '2026-08-01T00:00:00',
+      },
     );
     final ledger = await Hive.openBox('notebook_ledger');
     await ledger.put(
@@ -107,6 +108,9 @@ void main() {
     final db = await DatabaseHelper.instance.database;
     expect((await db.query('shopping_carts', where: 'user_id = 1')).length, 1);
     expect((await db.query('shopping_items', where: 'user_id = 1')).length, 1);
+    final migrated =
+        (await db.query('shopping_items', where: 'user_id = 1')).single;
+    expect(migrated['price'], 9.5);
     expect((await db.query('ledger', where: 'user_id = 1')).length, 1);
     expect((await db.query('recipes', where: 'user_id = 1')).length, 1);
     final meta = await Hive.openBox('app_meta');

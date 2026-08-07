@@ -19,7 +19,7 @@ class DatabaseHelper {
   static String? _pathOverride;
 
   static const _dbName = 'daily_planner.db';
-  static const _dbVersion = 3;
+  static const _dbVersion = 4;
 
   Database? _db;
 
@@ -112,6 +112,38 @@ class DatabaseHelper {
     if (oldVersion < 3) {
       await _upgradeV3(db);
     }
+    if (oldVersion < 4) {
+      await _upgradeV4(db);
+    }
+  }
+
+  /// v4 迁移：购物项去掉「预期价」，实付列改名 price（单一金额）。
+  ///
+  /// SQLite 删列需重建表：建新表 → 映射拷贝（实付优先，实付为 0 时以预期
+  /// 价兜底，避免丢失旧数据唯一金额信息）→ 删旧表 → 改名。
+  Future<void> _upgradeV4(Database db) async {
+    await db.execute('''
+      CREATE TABLE shopping_items_v4(
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        cart_id TEXT,
+        item TEXT NOT NULL,
+        price REAL NOT NULL DEFAULT 0,
+        category TEXT,
+        note TEXT,
+        date TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY(cart_id) REFERENCES shopping_carts(id) ON DELETE SET NULL
+      )''');
+    await db.execute('''
+      INSERT INTO shopping_items_v4(id, user_id, cart_id, item, price, category, note, date, created_at)
+      SELECT id, user_id, cart_id, item,
+             CASE WHEN actual_price > 0 THEN actual_price ELSE expected_price END,
+             category, note, date, created_at
+      FROM shopping_items''');
+    await db.execute('DROP TABLE shopping_items');
+    await db.execute('ALTER TABLE shopping_items_v4 RENAME TO shopping_items');
   }
 
   /// v3 迁移：任务表对齐统一调度表（task_schedule）关键字段，
@@ -171,8 +203,7 @@ class DatabaseHelper {
         user_id INTEGER NOT NULL,
         cart_id TEXT,
         item TEXT NOT NULL,
-        expected_price REAL,
-        actual_price REAL,
+        price REAL NOT NULL DEFAULT 0,
         category TEXT,
         note TEXT,
         date TEXT,

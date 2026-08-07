@@ -228,8 +228,7 @@ class FakeNotebookStore extends NotebookStore {
       NotebookShopping(
         id: item.id,
         item: item.item,
-        expectedPrice: item.expectedPrice,
-        actualPrice: item.actualPrice,
+        price: item.price,
         category: item.category,
         note: item.note,
         cartId: cartId,

@@ -55,9 +55,8 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
       NotebookShopping(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         item: result.$1,
-        expectedPrice: result.$2,
-        actualPrice: result.$3,
-        category: result.$4,
+        price: result.$2,
+        category: result.$3,
         note: '',
         cartId: cartId,
         date: '',
@@ -76,9 +75,8 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
       NotebookShopping(
         id: item.id,
         item: result.$1,
-        expectedPrice: result.$2,
-        actualPrice: result.$3,
-        category: result.$4,
+        price: result.$2,
+        category: result.$3,
         note: item.note,
         cartId: item.cartId,
         date: item.date,
@@ -132,15 +130,14 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     return value;
   }
 
-  Future<(String, num, num, String)?> _promptItem({
+  Future<(String, num, String)?> _promptItem({
     required String title,
     required NotebookShopping? initial,
   }) async {
     final name = TextEditingController(text: initial?.item ?? '');
-    final expected = TextEditingController(text: initial?.expectedPrice.toString() ?? '');
-    final actual = TextEditingController(text: initial?.actualPrice.toString() ?? '');
+    final price = TextEditingController(text: initial?.price.toString() ?? '');
     final category = TextEditingController(text: initial?.category ?? '');
-    final result = await showDialog<(String, num, num, String)>(
+    final result = await showDialog<(String, num, String)>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(title),
@@ -150,14 +147,9 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
             children: [
               TextField(controller: name, decoration: const InputDecoration(labelText: '物品')),
               TextField(
-                controller: expected,
+                controller: price,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '预期价'),
-              ),
-              TextField(
-                controller: actual,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '实付'),
+                decoration: const InputDecoration(labelText: '实付金额'),
               ),
               TextField(controller: category, decoration: const InputDecoration(labelText: '分类')),
             ],
@@ -171,8 +163,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop((
               name.text.trim(),
-              num.tryParse(expected.text) ?? 0,
-              num.tryParse(actual.text) ?? 0,
+              num.tryParse(price.text) ?? 0,
               category.text.trim(),
             )),
             child: const Text('保存'),
@@ -199,7 +190,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                   unit: '¥',
                   data: [
                     for (final i in widget.store.shopping)
-                      ReportDatum(date: i.date, value: i.actualPrice),
+                      ReportDatum(date: i.date, value: i.price),
                   ],
                 ),
               ),
@@ -238,12 +229,10 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
 
   Widget _cartHeader(NotebookShoppingCart cart) {
     final items = widget.store.cartsOf(cart.id);
-    final expected = items.fold<num>(0, (s, i) => s + i.expectedPrice);
-    final actual = items.fold<num>(0, (s, i) => s + i.actualPrice);
-    final diff = expected - actual;
+    final total = items.fold<num>(0, (s, i) => s + i.price);
     return ListTile(
       title: Text(cart.name, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text('${items.length} 项 · 预期 ¥$expected · 实付 ¥$actual · 差 ¥$diff'),
+      subtitle: Text('${items.length} 项 · 实付 ¥$total'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -263,7 +252,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
   Widget _itemTile(NotebookShopping item) {
     return ListTile(
       title: Text(item.item),
-      subtitle: Text('预期 ¥${item.expectedPrice} · 实付 ¥${item.actualPrice}'),
+      subtitle: Text('实付 ¥${item.price}'),
       trailing: IconButton(
         icon: const Icon(Icons.delete_outline),
         onPressed: () => _deleteItem(item),

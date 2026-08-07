@@ -179,8 +179,7 @@ void main() {
       NotebookShopping(
         id: 'i1',
         item: '牛奶',
-        expectedPrice: 10,
-        actualPrice: 9.5,
+        price: 9.5,
         category: '',
         note: '',
         cartId: '',
