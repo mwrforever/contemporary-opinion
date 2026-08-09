@@ -43,16 +43,25 @@ jobs:
         run: |
           sdkmanager "platforms;android-37" "build-tools;37.0.0" >/dev/null 2>&1 || true
       - name: Decode keystore & write key.properties (若配置了 KEYSTORE_BASE64)
-        # 未配置签名 Secrets 时跳过 -> build.gradle.kts 自动回退 debug 签名
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        # if: 条件中禁止使用 secrets 上下文，故通过 env 注入并在 shell 内判断
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/upload-keystore.jks
-          cat > android/key.properties <<'EOF'
-          storeFile=upload-keystore.jks
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          EOF
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
+            cat > android/key.properties <<'EOF'
+            storeFile=upload-keystore.jks
+            storePassword=$KEYSTORE_PASSWORD
+            keyAlias=$KEY_ALIAS
+            keyPassword=$KEY_PASSWORD
+            EOF
+            echo "正式签名已配置（key.properties 已生成）"
+          else
+            echo "未配置 KEYSTORE_BASE64，构建将回退 debug 签名"
+          fi
       - name: Build web release
         run: |
           flutter build web --release \
