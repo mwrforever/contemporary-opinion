@@ -59,22 +59,21 @@ jobs:
       - name: Install Android SDK 37 (compileSdk 要求，运行器预装版本常滞后)
         run: |
           sdkmanager "platforms;android-37" "build-tools;37.0.0" >/dev/null 2>&1 || true
-      - name: Build Android APK (with AGP fallback)
+      - name: Generate debug keystore
+        # release 签名未配置 key.properties 时回退 debug 签名；
+        # CI 运行器默认没有 debug.keystore，需先预生成
+        run: |
+          mkdir -p ~/.config/.android
+          keytool -genkeypair -v -keystore ~/.config/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
+      - name: Build Android APK
         shell: bash
         run: |
-          set +e
           flutter build apk --release \
             --dart-define=DASHSCOPE_API_KEY="${{ secrets.DASHSCOPE_API_KEY }}" \
             --dart-define=DASHSCOPE_BASE_URL="${{ secrets.DASHSCOPE_BASE_URL }}"
-          if [ $? -ne 0 ]; then
-            echo "::warning::首次构建失败，疑似 AGP 9.0.1/Kotlin 2.3.20 与 Flutter 验证基准不符，回退到 AGP 8.11.1/Kotlin 2.2.20/Gradle 8.11.1 后重试..."
-            sed -i 's/com.android.application" version "9.0.1"/com.android.application" version "8.11.1"/' android/settings.gradle.kts
-            sed -i 's/org.jetbrains.kotlin.android" version "2.3.20"/org.jetbrains.kotlin.android" version "2.2.20"/' android/settings.gradle.kts
-            sed -i 's#gradle-9.1.0-all.zip#gradle-8.11.1-all.zip#' android/gradle/wrapper/gradle-wrapper.properties
-            flutter build apk --release \
-              --dart-define=DASHSCOPE_API_KEY="${{ secrets.DASHSCOPE_API_KEY }}" \
-              --dart-define=DASHSCOPE_BASE_URL="${{ secrets.DASHSCOPE_BASE_URL }}"
-          fi
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
