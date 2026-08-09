@@ -729,16 +729,7 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
               const SizedBox(height: 18),
               // 平铺菜单：行间仅留白，无卡片/边框/阴影
-              _menuRow(
-                icon: Icons.person_outline,
-                accent: true,
-                label: '编辑昵称',
-                trailing: user.nickname?.isNotEmpty == true
-                    ? user.nickname
-                    : '未设置',
-                onTap: () => _editNickname(user),
-              ),
-              const SizedBox(height: 4),
+              // （编辑昵称入口在头部信息区，此处不再重复）
               _menuRow(
                 icon: Icons.alarm,
                 accent: false,

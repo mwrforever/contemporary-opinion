@@ -159,7 +159,8 @@ void main() {
 
   testWidgets('编辑昵称持久化并刷新', (tester) async {
     await pumpPage(tester);
-    await tester.tap(find.text('编辑昵称'));
+    // 头部信息区的编辑入口（菜单行已移除，避免重复）
+    await tester.tap(find.byIcon(Icons.edit_outlined));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '新昵称');
     await tester.tap(find.widgetWithText(FilledButton, '保存'));

@@ -88,10 +88,10 @@ void main() {
     await tester.pumpAndSettle();
     // 首页问候语展示原昵称
     expect(find.textContaining('小许'), findsWidgets);
-    // 切到「我的」修改昵称
+    // 切到「我的」修改昵称（头部信息区编辑入口）
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('编辑昵称'));
+    await tester.tap(find.byIcon(Icons.edit_outlined));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '新昵称');
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
