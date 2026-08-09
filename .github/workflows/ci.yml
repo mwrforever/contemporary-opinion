@@ -31,6 +31,8 @@ jobs:
           cache: true
       - name: Install dependencies
         run: flutter pub get
+      - name: Prepare local secrets file (secrets.dart 不入库，从示例模板生成)
+        run: cp lib/config/secrets.dart.example lib/config/secrets.dart
       - name: Static analysis (0 error 为通过；存量 info/warning 不阻断)
         run: flutter analyze
       - name: Run tests
@@ -49,6 +51,8 @@ jobs:
           cache: true
       - name: Install dependencies
         run: flutter pub get
+      - name: Prepare local secrets file (secrets.dart 不入库，从示例模板生成)
+        run: cp lib/config/secrets.dart.example lib/config/secrets.dart
       - name: Build web release
         # DASHSCOPE_* 通过 --dart-define 注入；仓库未设 Secrets 时为空串 -> 自动走本地兜底
         run: |
@@ -81,8 +85,13 @@ jobs:
           cache: true
       - name: Install dependencies
         run: flutter pub get
+      - name: Prepare local secrets file (secrets.dart 不入库，从示例模板生成)
+        run: cp lib/config/secrets.dart.example lib/config/secrets.dart
       - name: Accept Android licenses (best-effort)
         run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+      - name: Install Android SDK 37 (compileSdk 要求，运行器预装版本常滞后)
+        run: |
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" >/dev/null 2>&1 || true
       - name: Build Android APK (with AGP fallback)
         shell: bash
         run: |

@@ -35,8 +35,13 @@ jobs:
           cache: true
       - name: Install dependencies
         run: flutter pub get
+      - name: Prepare local secrets file (secrets.dart 不入库，从示例模板生成)
+        run: cp lib/config/secrets.dart.example lib/config/secrets.dart
       - name: Accept Android licenses (best-effort)
         run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+      - name: Install Android SDK 37 (compileSdk 要求，运行器预装版本常滞后)
+        run: |
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" >/dev/null 2>&1 || true
       - name: Decode keystore & write key.properties (若配置了 KEYSTORE_BASE64)
         # 未配置签名 Secrets 时跳过 -> build.gradle.kts 自动回退 debug 签名
         if: ${{ secrets.KEYSTORE_BASE64 != '' }}
