@@ -46,6 +46,10 @@ class ReminderService {
   TaskStore? _store;
   ReminderSettings _settings = const ReminderSettings();
 
+  /// 系统级响铃时长（我的页「默认响铃时长」注入）；
+  /// 未设置时为 null，回退 [voiceLoopTotal]（默认 10 秒）。
+  Duration? _ringDuration;
+
   /// 语音提醒循环总时长：到点后语音播报循环播放，直至该时长结束。
   /// 可注入以便测试（生产默认 10 秒）。
   final Duration voiceLoopTotal;
@@ -78,6 +82,12 @@ class ReminderService {
     }
   }
 
+  /// 设置系统级响铃时长（由 MainPage 注入用户资料中的默认响铃时长，
+  /// 未设置时传默认 10 秒即可）；到点播报窗口按此时长执行。
+  void setRingDuration(Duration duration) {
+    _ringDuration = duration;
+  }
+
   /// 启动时重新调度所有未完成任务
   Future<void> scheduleAll() async {
     if (_store == null) return;
@@ -99,6 +109,8 @@ class ReminderService {
 
   Future<void> _scheduleTask(Task task) async {
     await cancelTask(task); // 先清理旧的，避免重复
+    // 冲突待处理/时间待定任务不执行：不排系统通知，也不启动应用内计时
+    if (!task.effective) return;
     if (task.scheduledTime == null) return; // backlog 不调度
 
     final ids = _notificationIdsFor(task);
@@ -261,6 +273,8 @@ class ReminderService {
     _alertStopFlags.remove(task.id); // 清除上一轮（重复任务）残留，避免误杀本轮
     final text = _speakText(task);
     final start = DateTime.now();
+    // 响铃窗口 = 系统级响铃时长（我的页设置，默认 10 秒）
+    final window = _ringDuration ?? voiceLoopTotal;
 
     // 震动可叠加（静音同样生效）：响铃时长内持续震动（原生马达循环波形），
     // 窗口结束统一停止；系统通知侧也已按设置携带震动 pattern（应用被杀时兜底）。
@@ -271,7 +285,7 @@ class ReminderService {
     // 静音模式：到点不发声音（仅依赖系统通知展示）；
     // 否则纯语音播报标题（不再叠加响铃音，避免「哔哔」声）。
     if (_settings.mode != ReminderMode.mute) {
-      while (DateTime.now().difference(start) < voiceLoopTotal) {
+      while (DateTime.now().difference(start) < window) {
         if (_alertStopFlags.contains(task.id)) break;
         try {
           await tts.setVolume(_settings.volume / 100);
@@ -280,12 +294,12 @@ class ReminderService {
           // 播报不可用则忽略，继续走完窗口
         }
         if (_alertStopFlags.contains(task.id)) break;
-        if (DateTime.now().difference(start) >= voiceLoopTotal) break;
+        if (DateTime.now().difference(start) >= window) break;
         await Future.delayed(voiceGap);
       }
     } else if (_settings.vibrate) {
       // 静音 + 震动：无语音可播，按响铃时长持续震动后收尾
-      while (DateTime.now().difference(start) < voiceLoopTotal) {
+      while (DateTime.now().difference(start) < window) {
         if (_alertStopFlags.contains(task.id)) break;
         await Future.delayed(voiceGap);
       }

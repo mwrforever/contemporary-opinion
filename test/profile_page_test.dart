@@ -143,6 +143,20 @@ void main() {
     expect(find.text('本地账户'), findsOneWidget);
   });
 
+  testWidgets('未设置默认响铃时展示兜底 10 秒', (tester) async {
+    auth = FakeAuthService(
+      user: User(
+        id: 1,
+        username: 'xiaoxu',
+        passwordHash: 'fake',
+        nickname: '小许',
+        createdAt: DateTime(2026, 8, 5),
+      ),
+    );
+    await pumpPage(tester);
+    expect(find.text('10 秒'), findsOneWidget);
+  });
+
   testWidgets('编辑昵称持久化并刷新', (tester) async {
     await pumpPage(tester);
     await tester.tap(find.text('编辑昵称'));

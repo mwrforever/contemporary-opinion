@@ -69,7 +69,11 @@ jobs:
       - name: Build Android APK
         shell: bash
         run: |
+          # 版本号与 tag 一致（v1.0.2 -> build-name 1.0.2），安装后「关于」页可见
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
           flutter build apk --release \
+            --build-name="$TAG_VERSION" \
+            --build-number=1 \
             --dart-define=DASHSCOPE_API_KEY="${{ secrets.DASHSCOPE_API_KEY }}" \
             --dart-define=DASHSCOPE_BASE_URL="${{ secrets.DASHSCOPE_BASE_URL }}"
       - name: Upload release artifacts

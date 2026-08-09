@@ -186,6 +186,17 @@ void main() {
     expect(scheduler.permissionCalls, 1);
   });
 
+  test('冲突待处理任务（effective=false）不调度执行', () async {
+    final task = buildTask('conflict');
+    task.effective = false;
+    task.conflictState = ConflictState.pendingConflict;
+    await service.scheduleTask(task);
+    expect(scheduler.scheduled, isEmpty);
+    // 已清理旧调度，避免残留通知
+    expect(scheduler.cancelled, contains(7));
+    await service.stopAll();
+  });
+
   test('通知调度携带震动标志：跟随提醒设置，关闭时通知不带震动', () async {
     // 默认设置（未读库）：vibrate=true
     await service.scheduleTask(buildTask('vib1'));

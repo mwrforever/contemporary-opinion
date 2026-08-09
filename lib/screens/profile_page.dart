@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../data/daos/app_settings_dao.dart';
 import '../data/models/user.dart';
@@ -142,10 +143,10 @@ class _ProfilePageState extends State<ProfilePage> {
     widget.onNicknameChanged?.call();
   }
 
-  /// 编辑默认响铃时长：数字输入，非法值回退未设置。
+  /// 编辑默认响铃时长：数字输入，非法值/留空回退默认 10 秒。
   Future<void> _editRing(User user) async {
     final controller = TextEditingController(
-      text: user.defaultRingSeconds?.toString() ?? '',
+      text: user.defaultRingSeconds?.toString() ?? '10',
     );
     final value = await showDialog<String>(
       context: context,
@@ -560,14 +561,21 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  /// 关于时说：展示版本与简介。
+  /// 关于时说：展示安装包真实版本号（与 GitHub Release tag 一致）与简介。
   Future<void> _showAbout() async {
+    // package_info_plus 读取构建版本；异常（如测试环境无插件）回退占位
+    var version = '1.0.0';
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (info.version.isNotEmpty) version = info.version;
+    } catch (_) {}
+    if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         icon: _dialogIcon(Icons.info_outline),
         title: const Text('关于时说'),
-        content: const Text('时说 v1.0.0\n\n每日规划助手：定时提醒 + 语音解析自动规划。'),
+        content: Text('时说 v$version\n\n每日规划助手：定时提醒 + 语音解析自动规划。'),
         actions: [
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -735,8 +743,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 icon: Icons.alarm,
                 accent: false,
                 label: '默认响铃时长',
+                // 未设置时展示默认 10 秒
                 trailing: user.defaultRingSeconds == null
-                    ? '未设置'
+                    ? '10 秒'
                     : '${user.defaultRingSeconds} 秒',
                 onTap: () => _editRing(user),
               ),

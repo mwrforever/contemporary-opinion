@@ -70,6 +70,12 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       _time = TimeOfDay.fromDateTime(t.scheduledTime!);
       _repeat = t.repeat;
       _weekdays.addAll(t.customWeekdays);
+    } else if (t == null) {
+      // 新建默认时间 = 下一分钟：毫秒级过期检测下「当前分钟」已属过去，
+      // 默认值直接落在未来，保证打开即存也能通过
+      final nextMinute = DateTime.now().add(const Duration(minutes: 1));
+      _date = nextMinute;
+      _time = TimeOfDay.fromDateTime(nextMinute);
     }
   }
 
@@ -108,9 +114,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     if (!_formKey.currentState!.validate()) return;
     final now = DateTime.now();
     final when = _scheduledTime();
-    // 指定时间不允许早于当前（允许 1 分钟内时钟误差，避免截断秒导致的误拦截）
-    if (!_useCountdown &&
-        when.isBefore(now.subtract(const Duration(minutes: 1)))) {
+    // 毫秒级过期检测：指定时间只要早于当前时刻（含同一分钟内的秒/毫秒）
+    // 即不允许保存（倒计时模式由 now+分钟 推导，天然不早于 now）
+    if (!_useCountdown && when.isBefore(now)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('开始时间不能早于现在')),
       );
@@ -154,6 +160,7 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       t.ringSeconds = ring;
       await widget.store.recheck(t);
       await _notifyChanged(t);
+      _warnIfConflict(t);
     } else {
       final task = Task(
         id: const Uuid().v4(),
@@ -176,9 +183,23 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       );
       await widget.store.addWithConflictCheck(task);
       await _notifyChanged(task);
+      _warnIfConflict(task);
     }
     if (!mounted) return;
     Navigator.of(context).pop();
+  }
+
+  /// 冲突任务仍允许保存，但弹 SnackBar 警告：
+  /// 该任务已标记「冲突待处理」且暂不执行，需在列表中手动处理（改时间/换资源/确认覆盖）。
+  void _warnIfConflict(Task task) {
+    if (task.hasPendingConflict && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('该任务与既有任务存在资源冲突：已标记「冲突待处理」且暂不执行，'
+              '可在任务列表中改时间/换资源或确认覆盖'),
+        ),
+      );
+    }
   }
 
   /// 提醒编排失败（如通知权限缺失）不阻断保存与关闭页面。

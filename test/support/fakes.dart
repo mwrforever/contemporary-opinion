@@ -1,6 +1,7 @@
 // 共享测试替身：内存 TaskStore 与提醒三件套，隔离真实数据库/插件通道
 import 'package:daily_planner/models/task.dart';
 import 'package:daily_planner/services/audio_service.dart';
+import 'package:daily_planner/services/conflict_detector.dart';
 import 'package:daily_planner/services/reminder_scheduler.dart';
 import 'package:daily_planner/services/reminder_service.dart';
 import 'package:daily_planner/services/task_store.dart';
@@ -51,11 +52,18 @@ class FakeTaskStore extends TaskStore {
 
   @override
   Future<void> addWithConflictCheck(Task candidate, {DateTime? now}) async {
+    // 与真实 TaskStore 一致：真实冲突检测（纯 Dart）+ 标记生效状态
+    final result =
+        ConflictDetector.detect(candidate, all, referenceNow: now);
+    ConflictDetector.applyDecision(candidate, result);
     await add(candidate);
   }
 
   @override
   Future<void> recheck(Task task, {DateTime? now}) async {
+    final others = _tasks.where((t) => t.id != task.id).toList();
+    final result = ConflictDetector.detect(task, others, referenceNow: now);
+    ConflictDetector.applyDecision(task, result);
     await update(task);
   }
 

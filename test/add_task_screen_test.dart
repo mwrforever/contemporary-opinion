@@ -56,6 +56,68 @@ void main() {
     expect(find.text('开始时间不能早于现在'), findsOneWidget);
   });
 
+  testWidgets('毫秒级过期拦截：同一分钟内已过时刻也不允许保存', (tester) async {
+    // 任务时刻 = 30 秒前（与 now 同分钟），毫秒级判定为已过期
+    final past = Task(
+      id: 'same-min',
+      title: '刚过期',
+      scheduledTime: DateTime.now().subtract(const Duration(seconds: 30)),
+      createdAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      notificationId: 1,
+    );
+    await pumpScreen(tester, editTask: past);
+    await tester.tap(find.widgetWithText(FilledButton, '保存修改'));
+    await tester.pump();
+    expect(find.text('开始时间不能早于现在'), findsOneWidget);
+  });
+
+  testWidgets('资源冲突：允许保存但弹警告，且任务标记冲突不执行', (tester) async {
+    store.seed(Task(
+      id: 'conflict-src',
+      title: '占用会议室',
+      scheduledTime: DateTime.now().add(const Duration(minutes: 1)),
+      durationMinutes: 60,
+      resource: '会议室A',
+      createdAt: DateTime(2026, 8, 1),
+      notificationId: 1,
+    ));
+    // 与生产一致：新增页 push 在列表页之上，保存后 SnackBar 由列表页 Scaffold 承接
+    await tester.binding.setSurfaceSize(const Size(600, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => Center(
+              child: TextButton(
+                onPressed: () => Navigator.of(ctx).push(
+                  MaterialPageRoute(
+                    builder: (_) => AddTaskScreen(
+                      store: store,
+                      reminder: buildFakeReminder(),
+                    ),
+                  ),
+                ),
+                child: const Text('打开新增'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开新增'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).first, '开会');
+    await tester.enterText(find.byType(TextFormField).at(1), '会议室A');
+    await tester.tap(find.widgetWithText(FilledButton, '保存任务'));
+    await tester.pumpAndSettle();
+    final saved = store.all.firstWhere((t) => t.title == '开会');
+    expect(saved.hasPendingConflict, isTrue);
+    expect(saved.effective, isFalse);
+    // 已返回列表页，冲突警告 SnackBar 展示
+    expect(find.textContaining('资源冲突'), findsOneWidget);
+  });
+
   testWidgets('保存新任务进入 Store', (tester) async {
     await pumpScreen(tester);
     await tester.enterText(find.byType(TextFormField).first, '开会');

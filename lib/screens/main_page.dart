@@ -61,7 +61,18 @@ class _MainPageState extends State<MainPage> {
   }
 
   Future<void> _init() async {
-    await _refreshDisplayName();
+    final user = await _auth.currentUser();
+    if (user != null && mounted) {
+      final name = user.nickname?.isNotEmpty == true
+          ? user.nickname!
+          : user.username;
+      if (name != _displayName) setState(() => _displayName = name);
+      // 系统级响铃时长：我的页可配置，未设置默认 10 秒（非法值兜底 10）
+      final ringSeconds = user.defaultRingSeconds ?? 10;
+      _reminder.setRingDuration(
+        Duration(seconds: ringSeconds < 1 ? 10 : ringSeconds),
+      );
+    }
     try {
       await _reminder.init(_store);
       await _reminder.reloadSettings(widget.userId);
