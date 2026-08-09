@@ -57,11 +57,13 @@ class _ReadingScreenState extends State<ReadingScreen> {
       title: initial == null ? '添加书目' : '编辑书目',
       builder: (ctx, setSheetState) => [
         TextField(
+          autocorrect: false,
           controller: titleCtrl,
           decoration: InputDecoration(labelText: '书名', errorText: error),
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: authorCtrl,
           decoration: const InputDecoration(labelText: '作者（可选）'),
         ),
@@ -81,6 +83,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: categoryCtrl,
           decoration: const InputDecoration(labelText: '分类（可选）'),
         ),
@@ -90,6 +93,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
         StarsRow(value: rating, onChanged: (v) => setSheetState(() => rating = v)),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: noteCtrl,
           decoration: const InputDecoration(
             labelText: '备注（可选）',

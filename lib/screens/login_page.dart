@@ -105,10 +105,10 @@ class _LoginPageState extends State<LoginPage> {
                   children: [
                     TextFormField(
                       controller: _usernameController,
-                      // 荣耀等机型 IME 对带自动纠正/联想标志的普通字段不弹软键盘；
-                      // 与可用的密码字段对齐，关闭 autocorrect/enableSuggestions
+                      // 荣耀 IME 兼容：关闭 autocorrect 避免 AUTO_CORRECT 标志导致
+                      // 键盘不弹出；enableSuggestions 保持默认，避免 NO_SUGGESTIONS
+                      // 被误判为密码框而触发系统安全键盘（与原生输入框行为对齐）
                       autocorrect: false,
-                      enableSuggestions: false,
                       decoration: const InputDecoration(
                         labelText: '用户名',
                         prefixIcon: Icon(Icons.person_outline),

@@ -71,10 +71,10 @@ class _RegisterPageState extends State<RegisterPage> {
               children: [
                 TextFormField(
                   controller: _usernameController,
-                  // 荣耀等机型 IME 对带自动纠正/联想标志的普通字段不弹软键盘，
-                  // 与可用的密码字段对齐，关闭 autocorrect/enableSuggestions
+                  // 荣耀 IME 兼容：关闭 autocorrect 避免 AUTO_CORRECT 标志导致键盘
+                  // 不弹出；enableSuggestions 保持默认，避免 NO_SUGGESTIONS 误判
+                  // 为密码框触发系统安全键盘（与原生输入框行为对齐）
                   autocorrect: false,
-                  enableSuggestions: false,
                   decoration: const InputDecoration(
                     labelText: '用户名（唯一）',
                     helperText: '不能包含中文，昵称可自由设置',
@@ -126,9 +126,8 @@ class _RegisterPageState extends State<RegisterPage> {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _nicknameController,
-                  // 与用户名同理：关闭自动纠正/联想，保证荣耀机型软键盘可弹出
+                  // 与用户名同理：仅关 autocorrect，保持原生输入框标志
                   autocorrect: false,
-                  enableSuggestions: false,
                   decoration: const InputDecoration(
                     labelText: '昵称（可选）',
                     prefixIcon: Icon(Icons.badge_outlined),

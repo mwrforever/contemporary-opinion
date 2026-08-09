@@ -213,11 +213,13 @@ Future<void> showCourseSheet(
     title: initial == null ? '添加课程' : '编辑课程',
     builder: (ctx, setSheetState) => [
       TextField(
+        autocorrect: false,
         controller: titleCtrl,
         decoration: InputDecoration(labelText: '课程名', errorText: error),
       ),
       const SizedBox(height: 12),
       TextField(
+        autocorrect: false,
         controller: sourceCtrl,
         decoration: const InputDecoration(labelText: '来源 / 平台（可选）'),
       ),
@@ -237,6 +239,7 @@ Future<void> showCourseSheet(
       ),
       const SizedBox(height: 12),
       TextField(
+        autocorrect: false,
         controller: progressCtrl,
         keyboardType: TextInputType.number,
         decoration: const InputDecoration(
@@ -250,6 +253,7 @@ Future<void> showCourseSheet(
       StarsRow(value: rating, onChanged: (v) => setSheetState(() => rating = v)),
       const SizedBox(height: 12),
       TextField(
+        autocorrect: false,
         controller: noteCtrl,
         decoration: const InputDecoration(
           labelText: '备注（可选）',
@@ -369,11 +373,13 @@ class _CourseDetailState extends State<_CourseDetail> {
       title: record == null ? '添加记录' : '编辑记录',
       builder: (ctx, setSheetState) => [
         TextField(
+          autocorrect: false,
           controller: titleCtrl,
           decoration: InputDecoration(labelText: '标题', errorText: error),
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: contentCtrl,
           maxLines: 3,
           decoration: const InputDecoration(labelText: '内容（可选）'),

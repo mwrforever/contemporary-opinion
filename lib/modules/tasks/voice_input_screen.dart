@@ -361,6 +361,7 @@ class _VoiceInputScreenState extends State<VoiceInputScreen>
       children: [
         _sheetHeader('语音规划'),
         TextField(
+          autocorrect: false,
           controller: _textController,
           maxLines: 3,
           minLines: 2,
@@ -922,6 +923,7 @@ class _EditTaskDialogState extends State<_EditTaskDialog> {
             },
           ),
           TextField(
+            autocorrect: false,
             controller: _resource,
             decoration: const InputDecoration(labelText: '资源（可选）'),
           ),

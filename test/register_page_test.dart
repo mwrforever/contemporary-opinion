@@ -64,14 +64,14 @@ void main() {
     expect(find.text('用户名不能包含中文'), findsOneWidget);
   });
 
-  testWidgets('用户名/昵称框关闭自动纠正与联想（荣耀机型软键盘不弹的修复）', (tester) async {
+  testWidgets('用户名/昵称框关闭 autocorrect 且保留联想（荣耀机型软键盘修复）', (tester) async {
     await pumpRegister(tester, FakeAuthService());
     final username = tester.widget<TextField>(find.byType(TextField).at(0));
     expect(username.autocorrect, isFalse);
-    expect(username.enableSuggestions, isFalse);
+    expect(username.enableSuggestions, isTrue);
     final nickname = tester.widget<TextField>(find.byType(TextField).at(3));
     expect(nickname.autocorrect, isFalse);
-    expect(nickname.enableSuggestions, isFalse);
+    expect(nickname.enableSuggestions, isTrue);
   });
 
   testWidgets('注册成功进入主界面', (tester) async {

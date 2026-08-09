@@ -205,10 +205,10 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               _sectionTitle('基本信息'),
               TextFormField(
                 controller: _title,
-                // 荣耀等机型 IME 对带自动纠正/联想标志的字段不弹软键盘，
-                // 与可用的密码字段对齐，统一关闭 autocorrect/enableSuggestions
+                // 荣耀 IME 兼容：autocorrect:true 会映射成 AUTO_CORRECT 标志导致
+                // 键盘不弹出（原生 EditText 普通框不带此标志）；enableSuggestions
+                // 保持默认 true，避免 NO_SUGGESTIONS 被误判为密码框触发安全键盘。
                 autocorrect: false,
-                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '标题',
                   hintText: '如：明早 9 点开会',
@@ -338,7 +338,6 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               TextFormField(
                 controller: _resourceController,
                 autocorrect: false,
-                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '资源（可选）',
                   hintText: '如：会议室A、车',
@@ -349,7 +348,6 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 controller: _durationController,
                 keyboardType: TextInputType.number,
                 autocorrect: false,
-                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '时长（分钟，可选）',
                   hintText: '0 表示仅提醒不占时段',
@@ -360,7 +358,6 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                 controller: _ringController,
                 keyboardType: TextInputType.number,
                 autocorrect: false,
-                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '响铃（秒，可选）',
                   hintText: '留空使用默认',

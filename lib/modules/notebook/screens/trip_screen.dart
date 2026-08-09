@@ -209,16 +209,19 @@ Future<void> showTripSheet(
     title: initial == null ? '新建行程' : '编辑行程',
     builder: (ctx, setSheetState) => [
       TextField(
+        autocorrect: false,
         controller: titleCtrl,
         decoration: InputDecoration(labelText: '标题', errorText: titleError),
       ),
       const SizedBox(height: 12),
       TextField(
+        autocorrect: false,
         controller: cityCtrl,
         decoration: const InputDecoration(labelText: '目的地（可选）'),
       ),
       const SizedBox(height: 12),
       TextField(
+        autocorrect: false,
         controller: homeCtrl,
         decoration: const InputDecoration(labelText: '出发地（可选）'),
       ),
@@ -261,6 +264,7 @@ Future<void> showTripSheet(
       ),
       const SizedBox(height: 12),
       TextField(
+        autocorrect: false,
         controller: noteCtrl,
         decoration: const InputDecoration(
           labelText: '备注（可选）',
@@ -389,6 +393,7 @@ class _TripDetailState extends State<_TripDetail> {
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: labelCtrl,
           decoration: const InputDecoration(
             labelText: '标签（可选）',
@@ -433,6 +438,7 @@ class _TripDetailState extends State<_TripDetail> {
       title: cp == null ? '添加打卡点' : '编辑打卡点',
       builder: (ctx, setSheetState) => [
         TextField(
+          autocorrect: false,
           controller: nameCtrl,
           decoration: InputDecoration(labelText: '名称', errorText: nameError),
         ),
@@ -454,6 +460,7 @@ class _TripDetailState extends State<_TripDetail> {
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: amountCtrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: InputDecoration(
@@ -468,6 +475,7 @@ class _TripDetailState extends State<_TripDetail> {
         StarsRow(value: rating, onChanged: (v) => setSheetState(() => rating = v)),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: noteCtrl,
           decoration: const InputDecoration(
             labelText: '备注（可选）',

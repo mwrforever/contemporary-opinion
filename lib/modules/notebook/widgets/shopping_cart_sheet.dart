@@ -61,6 +61,7 @@ Future<void> showShoppingCartSheet(
           _buildTitleField(ctx, controller),
           const SizedBox(height: 8),
           TextField(
+            autocorrect: false,
             controller: noteController,
             decoration: const InputDecoration(
               labelText: '备注（可选）',

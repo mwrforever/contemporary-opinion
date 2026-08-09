@@ -111,6 +111,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
       builder: (ctx) => AlertDialog(
         title: Text(title),
         content: TextField(
+          autocorrect: false,
           controller: controller,
           autofocus: true,
           decoration: InputDecoration(hintText: hint),

@@ -115,6 +115,7 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('编辑昵称'),
         content: TextField(
+          autocorrect: false,
           controller: controller,
           decoration: const InputDecoration(labelText: '昵称'),
         ),
@@ -145,6 +146,7 @@ class _ProfilePageState extends State<ProfilePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('默认响铃时长'),
         content: TextField(
+          autocorrect: false,
           controller: controller,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(

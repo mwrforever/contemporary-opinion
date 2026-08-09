@@ -42,11 +42,12 @@ void main() {
     );
   });
 
-  testWidgets('用户名框关闭自动纠正/联想（荣耀机型软键盘不弹的修复）', (tester) async {
+  testWidgets('用户名框关闭 autocorrect 且保留联想（荣耀机型软键盘修复）', (tester) async {
     await pumpLogin(tester, FakeAuthService());
     final username = tester.widget<TextField>(find.byType(TextField).at(0));
     expect(username.autocorrect, isFalse);
-    expect(username.enableSuggestions, isFalse);
+    // enableSuggestions 保持默认：避免 NO_SUGGESTIONS 被荣耀误判为密码框触发安全键盘
+    expect(username.enableSuggestions, isTrue);
     // 密码框本身为 obscure 字段，引擎已强制关闭，仅验证不受影响
     final password = tester.widget<TextField>(find.byType(TextField).at(1));
     expect(password.obscureText, isTrue);

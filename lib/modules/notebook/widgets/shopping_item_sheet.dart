@@ -58,11 +58,13 @@ Future<void> showShoppingItemSheet(
               ]),
               const SizedBox(height: 8),
               TextField(
+                autocorrect: false,
                 controller: nameCtrl,
                 decoration: const InputDecoration(labelText: '物品名称'),
               ),
               const SizedBox(height: 12),
               TextField(
+                autocorrect: false,
                 controller: priceCtrl,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -88,6 +90,7 @@ Future<void> showShoppingItemSheet(
               ),
               const SizedBox(height: 12),
               TextField(
+                autocorrect: false,
                 controller: noteCtrl,
                 decoration: const InputDecoration(
                   labelText: '备注（可选）',

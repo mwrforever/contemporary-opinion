@@ -79,11 +79,13 @@ class _LedgerScreenState extends State<LedgerScreen> {
           ),
           const SizedBox(height: 12),
           TextField(
+            autocorrect: false,
             controller: titleCtrl,
             decoration: const InputDecoration(labelText: '标题'),
           ),
           const SizedBox(height: 12),
           TextField(
+            autocorrect: false,
             controller: amountCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
@@ -108,6 +110,7 @@ class _LedgerScreenState extends State<LedgerScreen> {
           ),
           const SizedBox(height: 12),
           TextField(
+            autocorrect: false,
             controller: noteCtrl,
             decoration: const InputDecoration(
               labelText: '备注（可选）',

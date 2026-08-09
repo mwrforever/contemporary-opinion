@@ -28,11 +28,11 @@ void main() {
     );
   }
 
-  testWidgets('标题输入框关闭自动纠正/联想（荣耀机型软键盘不弹的修复）', (tester) async {
+  testWidgets('标题输入框关闭 autocorrect 且保留联想（荣耀机型软键盘修复）', (tester) async {
     await pumpScreen(tester);
     final title = tester.widget<TextField>(find.byType(TextField).first);
     expect(title.autocorrect, isFalse);
-    expect(title.enableSuggestions, isFalse);
+    expect(title.enableSuggestions, isTrue);
   });
 
   testWidgets('标题必填校验', (tester) async {

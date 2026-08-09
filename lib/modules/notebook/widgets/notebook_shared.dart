@@ -89,6 +89,7 @@ class LabeledField extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         TextField(
+          autocorrect: false,
           controller: controller,
           maxLines: maxLines,
           keyboardType: keyboardType,

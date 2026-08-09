@@ -61,11 +61,13 @@ class _RecipeScreenState extends State<RecipeScreen> {
       title: initial == null ? '收藏菜谱' : '编辑菜谱',
       builder: (ctx, setSheetState) => [
         TextField(
+          autocorrect: false,
           controller: nameCtrl,
           decoration: InputDecoration(labelText: '菜名', errorText: error),
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: categoryCtrl,
           decoration: const InputDecoration(labelText: '分类（可选）'),
         ),
@@ -85,6 +87,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: ingredientsCtrl,
           maxLines: 4,
           decoration: const InputDecoration(
@@ -94,6 +97,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
         ),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: stepsCtrl,
           maxLines: 4,
           decoration: const InputDecoration(
@@ -107,6 +111,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
         StarsRow(value: rating, onChanged: (v) => setSheetState(() => rating = v)),
         const SizedBox(height: 12),
         TextField(
+          autocorrect: false,
           controller: noteCtrl,
           decoration: const InputDecoration(
             labelText: '备注（可选）',
