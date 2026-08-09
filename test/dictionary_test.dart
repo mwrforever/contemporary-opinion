@@ -26,9 +26,27 @@ void main() {
       );
     });
 
+    test('kExpenseTypes 支出 9 项且顺序正确', () {
+      expect(kExpenseTypes, hasLength(9));
+      expect(
+        kExpenseTypes,
+        equals(['餐饮', '交通', '购物', '居住', '娱乐', '医疗', '教育', '人情往来', '其他']),
+      );
+    });
+
+    test('kIncomeTypes 收入 6 项且顺序正确', () {
+      expect(kIncomeTypes, hasLength(6));
+      expect(
+        kIncomeTypes,
+        equals(['工资', '奖金', '理财', '兼职', '退款', '其他']),
+      );
+    });
+
     test('导出常量非空且为不可变列表', () {
       expect(kTransportModes, isA<List<String>>());
       expect(kBillingTypes, isA<List<String>>());
+      expect(kExpenseTypes, isA<List<String>>());
+      expect(kIncomeTypes, isA<List<String>>());
       // const 列表不可写
       expect(() => kTransportModes.add('新增'), throwsUnsupportedError);
     });

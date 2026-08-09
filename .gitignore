@@ -43,9 +43,30 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
+
+# 工作文档与设计稿（仅本地保留，不入版本库）
+docs/
+design/
+design-system/
+FEATURES.md
+PROGRESS.md
+PROJECT_INTRO.md
+
+# 本地工具/插件私有目录
+.agents/
+.claude/
+.superpowers/
+.playwright/
 
 # Local secrets (API keys / endpoints) — DO NOT COMMIT
 lib/config/secrets.dart
+
+# Android signing artifacts — DO NOT COMMIT
+android/key.properties
+android/upload-keystore.jks
+android/*.jks
+android/**/*.keystore
 
 # WorkBuddy private memory (user preferences / project notes) — DO NOT COMMIT
 .workbuddy/

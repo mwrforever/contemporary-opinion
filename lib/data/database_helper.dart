@@ -19,7 +19,7 @@ class DatabaseHelper {
   static String? _pathOverride;
 
   static const _dbName = 'daily_planner.db';
-  static const _dbVersion = 4;
+  static const _dbVersion = 6;
 
   Database? _db;
 
@@ -101,6 +101,7 @@ class DatabaseHelper {
       )''');
     await db.execute('CREATE INDEX idx_tasks_user ON tasks(user_id, status)');
     await _createUserSettingsTable(db);
+    await _createAppSettingsTable(db);
     await _createNotebookTables(db);
   }
 
@@ -115,6 +116,41 @@ class DatabaseHelper {
     if (oldVersion < 4) {
       await _upgradeV4(db);
     }
+    if (oldVersion < 5) {
+      await _upgradeV5(db);
+    }
+    if (oldVersion < 6) {
+      await _upgradeV6(db);
+    }
+  }
+
+  /// v6 迁移：trips 表追加行程备注列（规格 C5「备注（可选）」）。
+  ///
+  /// 兼容手工构造的旧库（如 v5 迁移测试只有 users 表）：仅当 trips 表存在
+  /// 时才 ALTER，避免无表报错。
+  Future<void> _upgradeV6(Database db) async {
+    final rows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'trips'",
+    );
+    if (rows.isNotEmpty) {
+      await db.execute('ALTER TABLE trips ADD COLUMN note TEXT');
+    }
+  }
+
+  /// v5 迁移：新增设备级 app_settings 键值表（深色模式三档 / 播报音色 / 自启动手动标记）。
+  ///
+  /// 设备级偏好与用户无关（登录前也需生效），独立于 per-user 的 user_settings。
+  Future<void> _upgradeV5(Database db) async {
+    await _createAppSettingsTable(db);
+  }
+
+  /// 设备级设置表：key-value 单列存储，值统一 TEXT。
+  Future<void> _createAppSettingsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS app_settings(
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )''');
   }
 
   /// v4 迁移：购物项去掉「预期价」，实付列改名 price（单一金额）。
@@ -246,6 +282,7 @@ class DatabaseHelper {
         home_city TEXT,
         start_date TEXT,
         end_date TEXT,
+        note TEXT,
         intercity_transport TEXT,
         hotel TEXT,
         transports TEXT,

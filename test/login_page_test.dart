@@ -42,6 +42,16 @@ void main() {
     );
   });
 
+  testWidgets('用户名框关闭自动纠正/联想（荣耀机型软键盘不弹的修复）', (tester) async {
+    await pumpLogin(tester, FakeAuthService());
+    final username = tester.widget<TextField>(find.byType(TextField).at(0));
+    expect(username.autocorrect, isFalse);
+    expect(username.enableSuggestions, isFalse);
+    // 密码框本身为 obscure 字段，引擎已强制关闭，仅验证不受影响
+    final password = tester.widget<TextField>(find.byType(TextField).at(1));
+    expect(password.obscureText, isTrue);
+  });
+
   testWidgets('密码错误提示「用户名或密码错误」', (tester) async {
     await pumpLogin(tester, FakeAuthService(user: buildUser()));
     await tester.enterText(find.byType(TextField).at(0), 'xiaoxu');

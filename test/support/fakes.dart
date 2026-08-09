@@ -68,7 +68,32 @@ class FakeTaskStore extends TaskStore {
 
   @override
   Future<void> toggleDoneAt(Task task, DateTime now) async {
-    if (task.status == TaskStatus.done) {
+    if (task.isDelayed) {
+      // 与真实 TaskStore 一致：倒计时重复推进次数，-1 一直重复永不完成
+      task.prevFireTime = task.scheduledTime?.add(
+        Duration(seconds: task.intervalSeconds ?? 0) * task.repeatCount,
+      );
+      task.repeatCount += 1;
+      if (task.repeatsForever) {
+        task.status = TaskStatus.pending;
+      } else if (task.maxRepeats != null &&
+          task.repeatCount >= task.maxRepeats!) {
+        task.status = TaskStatus.done;
+      } else {
+        task.status = TaskStatus.pending;
+      }
+      task.completedAt = now;
+      task.nextFireTime = task.nextFireFor(now);
+    } else if (task.isRepeating) {
+      final cur = task.nextOccurrence(now);
+      if (cur != null) {
+        task.scheduledTime = task.nextOccurrence(
+          cur.add(Duration(minutes: task.durationMinutes)),
+        );
+      }
+      task.status = TaskStatus.pending;
+      task.completedAt = now;
+    } else if (task.status == TaskStatus.done) {
       task.status = TaskStatus.pending;
       task.completedAt = null;
     } else {
@@ -84,6 +109,7 @@ class FakeTaskStore extends TaskStore {
 /// 记录型调度器替身
 class FakeScheduler implements ReminderScheduler {
   final scheduled = <int, DateTime>{};
+  final vibrateFlags = <int, bool>{};
   final cancelled = <int>[];
   int initCalls = 0;
   int permissionCalls = 0;
@@ -106,8 +132,10 @@ class FakeScheduler implements ReminderScheduler {
     required DateTime when,
     required DateTimeComponents? match,
     required String payload,
+    required bool vibrate,
   }) async {
     scheduled[id] = when;
+    vibrateFlags[id] = vibrate;
   }
 
   @override
@@ -136,6 +164,12 @@ class FakeTts extends TtsService {
 
   @override
   Future<void> init() async {}
+
+  @override
+  Future<List<TtsVoice>> availableVoices() async => const [];
+
+  @override
+  Future<void> setVoice(String? voiceId) async {}
 
   @override
   Future<void> speakAndAwait(

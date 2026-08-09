@@ -60,17 +60,8 @@ class BackupService {
   ///
   /// 单条损坏数据跳过不中断；不覆盖同名任务（id 冲突时静默失败）。
   Future<int> importJson(int userId, String json) async {
-    final dynamic decoded;
-    try {
-      decoded = jsonDecode(json);
-    } catch (_) {
-      throw const FormatException('备份文件不是有效 JSON');
-    }
-    if (decoded is! Map<String, dynamic> ||
-        decoded['version'] != 1 ||
-        decoded['tasks'] is! List) {
-      throw const FormatException('备份文件格式不正确');
-    }
+    validateImport(json); // 格式校验与导入逻辑共用同一判定
+    final decoded = jsonDecode(json) as Map<String, dynamic>;
     var count = 0;
     for (final item in decoded['tasks'] as List) {
       if (item is! Map) continue;
@@ -83,5 +74,25 @@ class BackupService {
       }
     }
     return count;
+  }
+
+  /// 校验备份 JSON 格式并返回其中的任务条数（不写库）。
+  ///
+  /// 用于导入前的确认弹窗：格式非法抛中文异常，合法时供 UI 展示条数。
+  /// 校验规则与 [importJson] 完全一致，避免「确认后可导入」与
+  /// 「实际导入」出现口径分歧。
+  int validateImport(String json) {
+    final dynamic decoded;
+    try {
+      decoded = jsonDecode(json);
+    } catch (_) {
+      throw const FormatException('备份文件不是有效 JSON');
+    }
+    if (decoded is! Map<String, dynamic> ||
+        decoded['version'] != 1 ||
+        decoded['tasks'] is! List) {
+      throw const FormatException('备份文件格式不正确');
+    }
+    return (decoded['tasks'] as List).length;
   }
 }

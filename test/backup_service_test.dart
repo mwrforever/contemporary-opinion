@@ -76,4 +76,26 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('validateImport 合法备份返回任务条数且不写库', () async {
+    final json =
+        '{"version":1,"tasks":[{"id":"a"},{"id":"b"},{"id":"c"}]}';
+    expect(BackupService().validateImport(json), 3);
+    // 仅校验不应产生任何任务
+    final rows = await (await DatabaseHelper.instance.database)
+        .query('tasks', where: 'user_id = 1');
+    expect(rows, isEmpty);
+  });
+
+  test('validateImport 非法 JSON 与错误版本均抛中文异常', () {
+    final service = BackupService();
+    expect(() => service.validateImport('not-json'),
+        throwsA(isA<FormatException>()));
+    expect(
+      () => service.validateImport('{"version":2,"tasks":[]}'),
+      throwsA(predicate(
+        (e) => e is FormatException && e.message == '备份文件格式不正确',
+      )),
+    );
+  });
 }

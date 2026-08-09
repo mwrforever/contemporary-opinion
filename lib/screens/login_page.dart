@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../theme/theme_controller.dart';
 import 'main_page.dart';
 import 'register_page.dart';
 
@@ -46,7 +47,10 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => MainPage(authService: _auth)),
+      MaterialPageRoute(
+        builder: (_) =>
+            MainPage(authService: _auth, theme: ThemeScope.of(context)),
+      ),
     );
   }
 
@@ -101,6 +105,10 @@ class _LoginPageState extends State<LoginPage> {
                   children: [
                     TextFormField(
                       controller: _usernameController,
+                      // 荣耀等机型 IME 对带自动纠正/联想标志的普通字段不弹软键盘；
+                      // 与可用的密码字段对齐，关闭 autocorrect/enableSuggestions
+                      autocorrect: false,
+                      enableSuggestions: false,
                       decoration: const InputDecoration(
                         labelText: '用户名',
                         prefixIcon: Icon(Icons.person_outline),

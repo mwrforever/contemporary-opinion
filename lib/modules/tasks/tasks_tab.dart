@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../data/daos/settings_dao.dart';
 import '../../models/task.dart';
 import '../../services/reminder_service.dart';
+import '../../services/permission_status_service.dart';
 import '../../services/task_store.dart';
 import '../../theme/task_status_style.dart';
 import '../../widgets/confirm_dialog.dart';
@@ -13,9 +14,9 @@ import '../../widgets/filter_tab_bar.dart';
 import '../../widgets/speed_dial.dart';
 import '../../widgets/task_card.dart';
 import 'add_task_screen.dart';
+import 'permission_gate_sheet.dart';
 import 'reminder_settings_sheet.dart';
 import 'task_detail_sheet.dart';
-import 'task_feedback_card.dart';
 import 'voice_input_screen.dart';
 
 /// 任务 Tab（V2）：4 状态 Tab + 统一记录行 + 详情抽屉 + 批量删除 + 语音浮层。
@@ -30,9 +31,10 @@ class TasksTab extends StatefulWidget {
     super.key,
     required this.store,
     required this.reminder,
-    this.displayName = '朋友',
+    this.displayName = '',
     this.userId = 1,
     this.onOpenProfile,
+    this.ensureReminderReady,
   });
 
   final TaskStore store;
@@ -45,6 +47,10 @@ class TasksTab extends StatefulWidget {
   /// 头像按钮跳转「我的」页回调（由 MainPage 切换 Tab）
   final VoidCallback? onOpenProfile;
 
+  /// 新建/语音规划前的权限门禁（测试注入）；默认检查通知权限，
+  /// 未授权时弹出 [PermissionGateSheet] 引导开启。
+  final Future<bool> Function()? ensureReminderReady;
+
   @override
   State<TasksTab> createState() => _TasksTabState();
 }
@@ -55,18 +61,28 @@ class _TasksTabState extends State<TasksTab> {
   _Filter _filter = _Filter.all;
   bool _selectionMode = false;
   final Set<String> _selected = {};
-  VoicePlanResult? _planResult;
+  late final Future<bool> Function() _ensureReminderReady =
+      widget.ensureReminderReady ?? _defaultEnsureReady;
+  late final PermissionStatusService _permissionStatus =
+      PermissionStatusService();
+  /// 周期刷新器：让「进行中/已过期」等时间驱动状态在页面停留时及时更新
+  Timer? _clock;
 
   @override
   void initState() {
     super.initState();
     widget.store.addListener(_onStoreChanged);
+    // 每 30 秒重算一次可见列表与角标，保证时间状态筛选及时正确
+    _clock = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
     // 加载 SQLite 任务；失败静默，空态兜底
     unawaited(_safe(widget.store.init()));
   }
 
   @override
   void dispose() {
+    _clock?.cancel();
     widget.store.removeListener(_onStoreChanged);
     super.dispose();
   }
@@ -90,7 +106,8 @@ class _TasksTabState extends State<TasksTab> {
       _Filter.all => all,
       _Filter.inProgress => all.where((t) => isInProgressTask(t, _now)).toList(),
       _Filter.conflict => all.where(isConflictTask).toList(),
-      _Filter.done => all.where((t) => isDeadDoneTask(t, _now)).toList(),
+      // 已完成 Tab 展示全部完成状态任务（含仍有后续计划的重复/倒计时任务）
+      _Filter.done => all.where((t) => t.isDone).toList(),
     };
   }
 
@@ -100,11 +117,37 @@ class _TasksTabState extends State<TasksTab> {
       _Filter.all => all.length,
       _Filter.inProgress => all.where((t) => isInProgressTask(t, _now)).length,
       _Filter.conflict => all.where(isConflictTask).length,
-      _Filter.done => all.where((t) => isDeadDoneTask(t, _now)).length,
+      _Filter.done => all.where((t) => t.isDone).length,
     };
   }
 
+  /// 默认权限门禁：通知权限已授权直接放行；否则弹出底部抽屉引导开启，
+  /// 用户拒绝或系统未授予时不放行（任务模块不可用）。
+  Future<bool> _defaultEnsureReady() async {
+    if (await _permissionStatus.notificationGranted()) return true;
+    if (!mounted) return false;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => PermissionGateSheet(
+        onRequest: () async {
+          try {
+            await widget.reminder.ensurePermissions();
+          } catch (_) {
+            // 权限请求失败按未授权处理，由抽屉内提示兜底
+          }
+          return _permissionStatus.notificationGranted();
+        },
+      ),
+    );
+    return ok == true;
+  }
+
   Future<void> _goAdd() async {
+    // 未开启通知权限时引导开启，否则不进入新建页
+    if (!await _ensureReminderReady()) return;
+    if (!mounted) return;
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => AddTaskScreen(
@@ -116,7 +159,9 @@ class _TasksTabState extends State<TasksTab> {
   }
 
   Future<void> _goVoice() async {
-    final result = await showModalBottomSheet<VoicePlanResult>(
+    if (!await _ensureReminderReady()) return;
+    if (!mounted) return;
+    await showModalBottomSheet<VoicePlanResult>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -125,8 +170,6 @@ class _TasksTabState extends State<TasksTab> {
         reminder: widget.reminder,
       ),
     );
-    if (!mounted || result == null) return;
-    setState(() => _planResult = result);
   }
 
   /// 打开任务详情抽屉（可编辑 + 冲突处理）
@@ -135,9 +178,10 @@ class _TasksTabState extends State<TasksTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      // 用抽屉自身的 ctx 取主题，避免捕获外层 State 的 context（路由可能晚于 State 存活）
+      builder: (ctx) => Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(ctx).colorScheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: SafeArea(
@@ -161,9 +205,10 @@ class _TasksTabState extends State<TasksTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
+      // 用抽屉自身的 ctx 取主题，避免捕获外层 State 的 context（路由可能晚于 State 存活）
+      builder: (ctx) => Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(ctx).colorScheme.surface,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: SafeArea(
@@ -253,7 +298,9 @@ class _TasksTabState extends State<TasksTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_greeting()}，${widget.displayName}',
+                    widget.displayName.isEmpty
+                        ? _greeting()
+                        : '${_greeting()}，${widget.displayName}',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -273,14 +320,17 @@ class _TasksTabState extends State<TasksTab> {
                   icon: CircleAvatar(
                     radius: 16,
                     backgroundColor: scheme.primaryContainer,
-                    child: Text(
-                      widget.displayName.characters.first,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: scheme.primary,
-                      ),
-                    ),
+                    child: widget.displayName.isEmpty
+                        ? Icon(Icons.person_outline,
+                            size: 16, color: scheme.primary)
+                        : Text(
+                            widget.displayName.characters.first,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: scheme.primary,
+                            ),
+                          ),
                   ),
                   tooltip: '我的',
                   onPressed: widget.onOpenProfile,
@@ -315,14 +365,6 @@ class _TasksTabState extends State<TasksTab> {
             )
           else
             const SizedBox(height: 8),
-          if (_planResult != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: TaskFeedbackCard(
-                result: _planResult!,
-                onDismiss: () => setState(() => _planResult = null),
-              ),
-            ),
           Expanded(
             child: visible.isEmpty
                 ? const EmptyState()

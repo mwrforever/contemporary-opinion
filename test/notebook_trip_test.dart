@@ -159,6 +159,7 @@ void main() {
         city: '厦门',
         startDate: '2026-07-20',
         endDate: '2026-07-22',
+        note: '住海边',
         days: [
           TripDay(label: '第 1 天', date: '2026-07-20', checkpoints: [
             TripCheckpoint(
@@ -177,6 +178,7 @@ void main() {
       expect(back.id, trip.id);
       expect(back.title, trip.title);
       expect(back.startDate, '2026-07-20');
+      expect(back.note, '住海边');
       expect(back.days, hasLength(1));
 
       final cp = back.days.first.checkpoints.first;

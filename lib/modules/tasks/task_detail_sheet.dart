@@ -35,14 +35,24 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
   late int _duration = widget.task.durationMinutes;
   late String _resource = widget.task.resource ?? '';
   late String _ring = widget.task.ringSeconds?.toString() ?? '';
-  late int _intervalMinutes = (widget.task.intervalSeconds ?? 1800) ~/ 60;
-  late int _maxRepeats = widget.task.maxRepeats ?? 5;
+  // 倒计时间隔默认取任务已存值；一次性倒计时（interval 为空）回退到
+  // 创建时的分钟数，避免编辑保存时凭空引入 30 分钟间隔。
+  late int _intervalMinutes =
+      (widget.task.intervalSeconds ??
+              ((widget.task.countdownMinutes ?? 30) * 60)) ~/
+          60;
+  // 重复次数默认 1：一次性倒计时任务仅保存不改动时保持一次性。
+  late int _maxRepeats = widget.task.maxRepeats ?? 1;
   late final TextEditingController _resourceCtrl =
       TextEditingController(text: _resource);
   late final TextEditingController _ringCtrl =
       TextEditingController(text: _ring);
 
-  bool get _isDelayed => widget.task.isDelayed;
+  /// 是否倒计时来源任务（含一次性倒计时）：详情中展示间隔/次数调节。
+  bool get _isCountdownLike =>
+      widget.task.isDelayed ||
+      widget.task.countdownMinutes != null ||
+      widget.task.countdownSeconds != null;
   bool get _isConflict => widget.task.hasPendingConflict;
 
   @override
@@ -140,9 +150,13 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
     t.durationMinutes = _duration;
     t.resource = _resource.isEmpty ? null : _resource;
     t.ringSeconds = int.tryParse(_ring);
-    if (_isDelayed) {
-      t.intervalSeconds = _intervalMinutes * 60;
-      t.maxRepeats = _maxRepeats;
+    if (_isCountdownLike) {
+      // 倒计时任务：重复次数 ≠ 1（含 -1 一直重复）转 DELAYED，
+      // 为 1 时退化为一次性 ONCE
+      final delayed = _maxRepeats != 1;
+      t.triggerType = delayed ? TriggerType.delayed : TriggerType.once;
+      t.intervalSeconds = delayed ? _intervalMinutes * 60 : null;
+      t.maxRepeats = delayed ? _maxRepeats : null;
     }
     await widget.store.recheck(t);
     await widget.reminder.notifyTaskChanged(t);
@@ -181,24 +195,6 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                 style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
               const Spacer(),
-              // 完成/恢复切换（任务记录不再常驻复选框，完成操作收进详情）
-              IconButton(
-                key: const ValueKey('detail-done-toggle'),
-                tooltip: widget.task.isDone ? '恢复待执行' : '标记完成',
-                icon: Icon(
-                  widget.task.isDone
-                      ? Icons.check_circle
-                      : Icons.check_circle_outline,
-                  color: widget.task.isDone
-                      ? Theme.of(context).colorScheme.primary
-                      : null,
-                ),
-                onPressed: () async {
-                  await widget.store.toggleDone(widget.task);
-                  await widget.reminder.notifyTaskChanged(widget.task);
-                  if (mounted) Navigator.of(context).pop();
-                },
-              ),
               IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.of(context).pop(),
@@ -336,7 +332,7 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                   _field(label: '时长', value: '$_duration 分钟', onTap: _pickDuration),
                   _field(label: '资源', value: _resource.isEmpty ? '未设置' : _resource, onTap: _pickResource),
                   _field(label: '响铃', value: _ring.isEmpty ? '默认' : '$_ring 秒', onTap: _pickRing),
-                  if (_isDelayed) ...[
+                  if (_isCountdownLike) ...[
                     _stepperField(
                       label: '每隔多久提醒一次',
                       value: '$_intervalMinutes 分钟',
@@ -351,13 +347,17 @@ class _TaskDetailSheetState extends State<TaskDetailSheet> {
                     ),
                     _stepperField(
                       label: '重复次数',
-                      value: '$_maxRepeats 次（已完成 ${widget.task.repeatCount} 次）',
-                      onMinus: () => setState(
-                        () => _maxRepeats = (_maxRepeats - 1).clamp(1, 999),
-                      ),
-                      onPlus: () => setState(
-                        () => _maxRepeats = (_maxRepeats + 1).clamp(1, 999),
-                      ),
+                      value: _maxRepeats == -1
+                          ? '一直重复（已完成 ${widget.task.repeatCount} 次）'
+                          : '$_maxRepeats 次（已完成 ${widget.task.repeatCount} 次）',
+                      onMinus: () => setState(() {
+                        // 从 1 递减直接跳到 -1（一直重复），跳过非法值 0
+                        _maxRepeats = _maxRepeats == 1 ? -1 : _maxRepeats - 1;
+                      }),
+                      onPlus: () => setState(() {
+                        // 从 -1 递增回到 1，之后按 1 步进
+                        _maxRepeats = _maxRepeats == -1 ? 1 : _maxRepeats + 1;
+                      }),
                     ),
                   ],
                   const SizedBox(height: 18),

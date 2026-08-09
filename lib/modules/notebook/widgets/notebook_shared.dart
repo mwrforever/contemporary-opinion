@@ -169,6 +169,30 @@ class NotebookChip extends StatelessWidget {
   }
 }
 
+/// 语义徽标：按 [tone] 返回浅底深字的小标签。
+///
+/// tone 取值：ok（成功/已完成/收入）、warn（进行中/提醒/支出）、danger
+/// （困难/删除）、其余归 neutral（待定/未开始/未知）。深色模式自动切换
+/// 到 AppTheme 深色变体，保证对比度。
+NotebookChip semanticChip(
+  BuildContext context, {
+  required String label,
+  required String tone,
+}) {
+  final scheme = Theme.of(context).colorScheme;
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final (bg, fg) = switch (tone) {
+    'ok' => (AppTheme.okSoft, isDark ? AppTheme.okDark : AppTheme.ok),
+    'warn' => (AppTheme.warnSoft, isDark ? AppTheme.warnDark : AppTheme.warn),
+    'danger' => (
+        AppTheme.dangerSoft,
+        isDark ? AppTheme.dangerDark : AppTheme.danger
+      ),
+    _ => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant),
+  };
+  return NotebookChip(label: label, bg: bg, fg: fg);
+}
+
 /// 日期选择字段：点击唤起原生 [showDatePicker]，回填 `yyyy-MM-dd` 字符串。
 ///
 /// 取代手动输入文本，统一日期格式（复用 [add_task_screen] 的 `firstDate` /
@@ -504,6 +528,61 @@ Future<void> showNotebookVoiceSheet<T>(
       builder: (_) => sheet,
     );
 
+/// 打开记事本编辑抽屉统一外壳。
+///
+/// 统一 24 圆角、表面底色、安全区与键盘避让，内容单列滚动；标题行与关闭
+/// 按钮由本方法渲染，字段与底部操作按钮由 [builder] 提供。局部状态更新
+/// 通过 [StateSetter] 触发，与 `showModalBottomSheet` 的 StatefulBuilder 一致。
+Future<void> showNotebookEditSheet(
+  BuildContext context, {
+  required String title,
+  required List<Widget> Function(BuildContext sheetContext, StateSetter setSheetState)
+      builder,
+}) async {
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheetState) => Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 14,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 26,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(ctx).textTheme.titleLarge,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ...builder(ctx, setSheetState),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 /// 新增 id（进程内唯一）。
 String notebookNewId() =>
     '${DateTime.now().microsecondsSinceEpoch}_${(_counter++).toString()}';
@@ -511,3 +590,16 @@ int _counter = 0;
 
 /// 金额展示：¥ + 两位小数（购物/报表共用）。
 String formatYuan(num v) => '¥${v.toStringAsFixed(2)}';
+
+/// 金额展示（千分位）：如 ¥1,286.40（汇总卡/报表结余卡使用）。
+String formatYuanThousands(num v) {
+  final fixed = v.toStringAsFixed(2);
+  final dot = fixed.indexOf('.');
+  final intPart = fixed.substring(0, dot);
+  final buf = StringBuffer();
+  for (var i = 0; i < intPart.length; i++) {
+    if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(',');
+    buf.write(intPart[i]);
+  }
+  return '¥$buf${fixed.substring(dot)}';
+}

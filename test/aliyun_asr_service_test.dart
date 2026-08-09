@@ -8,7 +8,6 @@ import 'package:daily_planner/services/audio_capture.dart';
 import 'package:flutter/services.dart' show MethodCall, MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter/widgets.dart' show WidgetsFlutterBinding;
 
 /// 测试替身：录音返回可控的 PCM 分片，并暴露可定制的真实采样率。
 ///

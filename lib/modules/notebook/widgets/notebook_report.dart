@@ -298,6 +298,7 @@ class _ReportScreenState extends State<ReportScreen> {
 
   void _prev() => setState(() => _anchor = _shiftPeriod(_anchor, _g, -1));
   void _next() => setState(() => _anchor = _shiftPeriod(_anchor, _g, 1));
+  bool get _isCurrent => _periodStart(DateTime.now(), _g) == _anchor;
   void _setGranularity(ReportGranularity g) => setState(() {
         _g = g;
         _anchor = _periodStart(DateTime.now(), g);
@@ -333,7 +334,8 @@ class _ReportScreenState extends State<ReportScreen> {
                 ),
                 const Spacer(),
                 IconButton(
-                    onPressed: _next,
+                    // 当前周期禁止进入未来区间（规格 C9）
+                    onPressed: _isCurrent ? null : _next,
                     icon: const Icon(Icons.chevron_right),
                     tooltip: '下一区间'),
               ],

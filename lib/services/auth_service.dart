@@ -34,6 +34,10 @@ class AuthService {
     if (name.isEmpty) {
       return const AuthResult(ok: false, error: '用户名不能为空');
     }
+    // 用户名不能包含中文（登录标识），昵称字段才允许自由命名
+    if (name.contains(RegExp(r'[\u4e00-\u9fff]'))) {
+      return const AuthResult(ok: false, error: '用户名不能包含中文');
+    }
     if (password.length < 6) {
       return const AuthResult(ok: false, error: '密码至少 6 位');
     }

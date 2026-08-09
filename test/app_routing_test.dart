@@ -65,6 +65,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('退出登录'));
     await tester.pumpAndSettle();
+    // 退出需确认：点「退出」后清空 session 并回到登录页
+    await tester.tap(find.widgetWithText(FilledButton, '退出'));
+    await tester.pumpAndSettle();
     expect(find.text('登录'), findsWidgets);
     expect(await auth.currentUser(), isNull);
   });

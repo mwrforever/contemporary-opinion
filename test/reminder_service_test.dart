@@ -6,6 +6,7 @@ import 'package:daily_planner/services/reminder_scheduler.dart';
 import 'package:daily_planner/services/reminder_service.dart';
 import 'package:daily_planner/services/task_store.dart';
 import 'package:daily_planner/services/tts_service.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'
     show DateTimeComponents;
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// 记录型调度器替身
 class FakeScheduler implements ReminderScheduler {
   final scheduled = <int, DateTime>{};
+  final vibrateFlags = <int, bool>{};
   final cancelled = <int>[];
   int initCalls = 0;
   int permissionCalls = 0;
@@ -38,8 +40,10 @@ class FakeScheduler implements ReminderScheduler {
     required DateTime when,
     required DateTimeComponents? match,
     required String payload,
+    required bool vibrate,
   }) async {
     scheduled[id] = when;
+    vibrateFlags[id] = vibrate;
   }
 
   @override
@@ -72,6 +76,12 @@ class FakeTts extends TtsService {
 
   @override
   Future<void> init() async {}
+
+  @override
+  Future<List<TtsVoice>> availableVoices() async => const [];
+
+  @override
+  Future<void> setVoice(String? voiceId) async {}
 
   @override
   Future<void> speakAndAwait(
@@ -164,6 +174,43 @@ void main() {
     expect(scheduler.permissionCalls, 1);
   });
 
+  test('通知调度携带震动标志：跟随提醒设置，关闭时通知不带震动', () async {
+    // 默认设置（未读库）：vibrate=true
+    await service.scheduleTask(buildTask('vib1'));
+    expect(scheduler.vibrateFlags[7], isTrue);
+    await service.stopAll();
+    // 库中 vibrate=0：重排后通知显式禁用震动
+    DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
+    DatabaseHelper.setPathForTest(inMemoryDatabasePath);
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('users', {
+      'username': 'owner',
+      'password_hash': 'hash',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    await db.insert('user_settings', {
+      'user_id': 1,
+      'reminder_mode': 'voice',
+      'vibrate': 0,
+      'reminder_volume': 60,
+    });
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final svc = ReminderService(
+      scheduler: scheduler,
+      audio: audio,
+      tts: tts,
+    );
+    await svc.init(store);
+    await svc.reloadSettings(1);
+    final noVib = buildTask('vib2');
+    await store.add(noVib);
+    await svc.scheduleTask(noVib);
+    expect(scheduler.vibrateFlags[7], isFalse);
+    await svc.stopAll();
+    await DatabaseHelper.instance.close();
+  });
+
   test('scheduleAll 跳过已完成任务', () async {
     DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
     DatabaseHelper.setPathForTest(inMemoryDatabasePath);
@@ -186,7 +233,17 @@ void main() {
     await DatabaseHelper.instance.close();
   });
 
-  test('提醒设置：静音到点不播报，语音到点播报（含音量）', () async {
+  test('提醒设置：静音到点不播报但震动仍生效，语音到点纯播报标题（不叠加响铃）', () async {
+    // 拦截原生震动通道：记录到点是否触发马达震动
+    final vibrateCalls = <String>[];
+    final channel = const MethodChannel('daily_planner/vibrate');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      vibrateCalls.add(call.method);
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
     DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
     DatabaseHelper.setPathForTest(inMemoryDatabasePath);
     final db = await DatabaseHelper.instance.database;
@@ -212,15 +269,20 @@ void main() {
     );
     await svc.init(store);
     await svc.reloadSettings(1);
-    final task = buildTask('提醒');
-    task.scheduledTime = DateTime.now().add(const Duration(minutes: 1));
-    await store.add(task);
-    // 静音：到点只展示系统通知，不响铃不播报
-    scheduler.payloadCallback!(task.id);
+    // 静音+震动：到点只展示系统通知 + 触发震动，不响铃不播报
+    // （一次性任务播报后自动完成，故语音阶段用独立任务，避免触发 _fireAlertById 的 done 拦截）
+    final muteTask = buildTask('静音任务');
+    muteTask.scheduledTime = DateTime.now().add(const Duration(minutes: 1));
+    await store.add(muteTask);
+    scheduler.payloadCallback!(muteTask.id);
     await Future.delayed(const Duration(milliseconds: 80));
     expect(tts.speakCount, 0);
     expect(audio.ringCount, 0);
-    // 切回语音：到点响铃 + 播报
+    expect(vibrateCalls, isNotEmpty);
+    // 震动持续整个响铃时长（150ms）后自动停止，不遗留常震
+    await Future.delayed(const Duration(milliseconds: 300));
+    expect(vibrateCalls, contains('cancel'));
+    // 切回语音：到点纯语音播报（不再叠加响铃音，避免哔哔声）
     await db.update(
       'user_settings',
       {'reminder_mode': 'voice', 'reminder_volume': 70},
@@ -228,10 +290,177 @@ void main() {
       whereArgs: [1],
     );
     await svc.reloadSettings(1);
-    scheduler.payloadCallback!(task.id);
+    final voiceTask = buildTask('语音任务');
+    voiceTask.scheduledTime = DateTime.now().add(const Duration(minutes: 1));
+    await store.add(voiceTask);
+    scheduler.payloadCallback!(voiceTask.id);
     await Future.delayed(const Duration(milliseconds: 300));
     expect(tts.speakCount, greaterThan(0));
-    expect(audio.ringCount, greaterThan(0));
+    expect(audio.ringCount, 0);
+    await svc.stopAll();
+    await DatabaseHelper.instance.close();
+  });
+
+  /// 构造倒计时重复任务：首次触发在 [delayMs] 后，间隔 [intervalSeconds] 秒。
+  Task buildDelayedTask(
+    String id, {
+    required Duration delay,
+    required int intervalSeconds,
+    required int maxRepeats,
+    int repeatCount = 0,
+    int notificationId = 8,
+  }) =>
+      Task(
+        id: id,
+        title: '任务$id',
+        scheduledTime: DateTime.now().add(delay),
+        triggerType: TriggerType.delayed,
+        intervalSeconds: intervalSeconds,
+        maxRepeats: maxRepeats,
+        repeatCount: repeatCount,
+        createdAt: DateTime(2026, 8, 1),
+        notificationId: notificationId,
+      );
+
+  test('倒计时重复：播报完成后未达上限推进次数并重排下次执行时间', () async {
+    DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
+    DatabaseHelper.setPathForTest(inMemoryDatabasePath);
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('users', {
+      'username': 'owner',
+      'password_hash': 'hash',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final svc = ReminderService(
+      scheduler: scheduler,
+      audio: audio,
+      tts: tts,
+      voiceLoopTotal: const Duration(milliseconds: 120),
+      voiceGap: const Duration(milliseconds: 10),
+    );
+    await svc.init(store);
+    final anchor = DateTime.now().add(const Duration(milliseconds: 250));
+    final task = buildDelayedTask(
+      'delayed',
+      delay: anchor.difference(DateTime.now()),
+      intervalSeconds: 60,
+      maxRepeats: 3,
+    );
+    await store.add(task);
+    await svc.scheduleTask(task);
+    // 等待首次触发 + 播报窗口走完，触发自动推进
+    await Future.delayed(const Duration(milliseconds: 600));
+    final current = store.getById('delayed')!;
+    expect(current.status, TaskStatus.pending);
+    expect(current.repeatCount, 1);
+    // 系统通知已重排到「首次 + 一个间隔」后的下一次
+    expect(scheduler.scheduled[8], anchor.add(const Duration(seconds: 60)));
+    await svc.stopAll();
+    await DatabaseHelper.instance.close();
+  });
+
+  test('倒计时一直重复(-1)：播报完成后保持待执行并继续重排', () async {
+    DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
+    DatabaseHelper.setPathForTest(inMemoryDatabasePath);
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('users', {
+      'username': 'owner',
+      'password_hash': 'hash',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final svc = ReminderService(
+      scheduler: scheduler,
+      audio: audio,
+      tts: tts,
+      voiceLoopTotal: const Duration(milliseconds: 120),
+      voiceGap: const Duration(milliseconds: 10),
+    );
+    await svc.init(store);
+    final anchor = DateTime.now().add(const Duration(milliseconds: 250));
+    final task = buildDelayedTask(
+      'forever',
+      delay: anchor.difference(DateTime.now()),
+      intervalSeconds: 60,
+      maxRepeats: -1,
+    );
+    await store.add(task);
+    await svc.scheduleTask(task);
+    await Future.delayed(const Duration(milliseconds: 600));
+    final current = store.getById('forever')!;
+    expect(current.status, TaskStatus.pending);
+    expect(current.repeatCount, 1);
+    expect(scheduler.scheduled[8], anchor.add(const Duration(seconds: 60)));
+    await svc.stopAll();
+    await DatabaseHelper.instance.close();
+  });
+
+  test('倒计时重复：次数用尽后播报完成自动标记已完成并取消调度', () async {
+    DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
+    DatabaseHelper.setPathForTest(inMemoryDatabasePath);
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('users', {
+      'username': 'owner',
+      'password_hash': 'hash',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final svc = ReminderService(
+      scheduler: scheduler,
+      audio: audio,
+      tts: tts,
+      voiceLoopTotal: const Duration(milliseconds: 120),
+      voiceGap: const Duration(milliseconds: 10),
+    );
+    await svc.init(store);
+    final anchor = DateTime.now().add(const Duration(milliseconds: 250));
+    final task = buildDelayedTask(
+      'onceDelay',
+      delay: anchor.difference(DateTime.now()),
+      intervalSeconds: 60,
+      maxRepeats: 1,
+    );
+    await store.add(task);
+    await svc.scheduleTask(task);
+    await Future.delayed(const Duration(milliseconds: 600));
+    final current = store.getById('onceDelay')!;
+    expect(current.status, TaskStatus.done);
+    expect(current.repeatCount, 1);
+    expect(scheduler.cancelled, contains(8));
+    await svc.stopAll();
+    await DatabaseHelper.instance.close();
+  });
+
+  test('一次性任务：播报完成后自动标记已完成并取消调度', () async {
+    DatabaseHelper.setFactoryForTest(databaseFactoryFfi);
+    DatabaseHelper.setPathForTest(inMemoryDatabasePath);
+    final db = await DatabaseHelper.instance.database;
+    await db.insert('users', {
+      'username': 'owner',
+      'password_hash': 'hash',
+      'created_at': '2026-08-05T00:00:00',
+    });
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final svc = ReminderService(
+      scheduler: scheduler,
+      audio: audio,
+      tts: tts,
+      voiceLoopTotal: const Duration(milliseconds: 120),
+      voiceGap: const Duration(milliseconds: 10),
+    );
+    await svc.init(store);
+    final task = buildTask('onceAuto');
+    task.scheduledTime = DateTime.now().add(const Duration(milliseconds: 250));
+    await store.add(task);
+    await svc.scheduleTask(task);
+    await Future.delayed(const Duration(milliseconds: 600));
+    expect(store.getById('onceAuto')!.status, TaskStatus.done);
+    expect(scheduler.cancelled, contains(7));
     await svc.stopAll();
     await DatabaseHelper.instance.close();
   });

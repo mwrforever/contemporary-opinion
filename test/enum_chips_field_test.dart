@@ -72,4 +72,38 @@ void main() {
     expect(find.text('收起'), findsOneWidget);
     expect(find.text('药品保健'), findsOneWidget);
   });
+
+  testWidgets('MultiEnumChipsField 多选：点选加入、再点取消、不影响其他', (tester) async {
+    const values = ['门票', '餐饮', '购物', '交通', '其他'];
+    final selected = <String>{};
+    await tester.pumpWidget(MaterialApp(
+      home: StatefulBuilder(
+        builder: (context, setState) => Scaffold(
+          body: SizedBox(
+            width: 400,
+            child: MultiEnumChipsField(
+              values: values,
+              selected: selected,
+              onChanged: (v) => setState(() {
+                selected
+                  ..clear()
+                  ..addAll(v);
+              }),
+            ),
+          ),
+        ),
+      ),
+    ));
+    // 依次点选两项
+    await tester.tap(find.text('门票'));
+    await tester.pumpAndSettle();
+    expect(selected, {'门票'});
+    await tester.tap(find.text('交通'));
+    await tester.pumpAndSettle();
+    expect(selected, {'门票', '交通'});
+    // 再点取消其中一项
+    await tester.tap(find.text('门票'));
+    await tester.pumpAndSettle();
+    expect(selected, {'交通'});
+  });
 }

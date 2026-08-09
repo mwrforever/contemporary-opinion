@@ -13,6 +13,7 @@ class NotebookTrip {
   final String homeCity;
   final String startDate; // yyyy-MM-dd，可选
   final String endDate;
+  final String note; // 行程备注，可选（规格 C5）
   final TripTransport? intercityTransport;
   final TripHotel? hotel;
   final List<TripTransport> transports;
@@ -25,6 +26,7 @@ class NotebookTrip {
     this.homeCity = '',
     this.startDate = '',
     this.endDate = '',
+    this.note = '',
     this.intercityTransport,
     this.hotel,
     this.transports = const [],
@@ -63,6 +65,7 @@ class NotebookTrip {
     String? homeCity,
     String? startDate,
     String? endDate,
+    String? note,
     TripTransport? intercityTransport,
     TripHotel? hotel,
     List<TripTransport>? transports,
@@ -75,6 +78,7 @@ class NotebookTrip {
         homeCity: homeCity ?? this.homeCity,
         startDate: startDate ?? this.startDate,
         endDate: endDate ?? this.endDate,
+        note: note ?? this.note,
         intercityTransport: intercityTransport ?? this.intercityTransport,
         hotel: hotel ?? this.hotel,
         transports: transports ?? this.transports,
@@ -88,6 +92,7 @@ class NotebookTrip {
         homeCity: (m['home_city'] ?? m['homeCity'] ?? '') as String,
         startDate: (m['start_date'] ?? m['startDate'] ?? '') as String,
         endDate: (m['end_date'] ?? m['endDate'] ?? '') as String,
+        note: (m['note'] ?? '') as String,
         intercityTransport: _transport(m['intercity_transport'] ?? m['intercityTransport']),
         hotel: _hotel(m['hotel']),
         transports: _transportList(m['transports']),
@@ -101,6 +106,7 @@ class NotebookTrip {
         'homeCity': homeCity,
         'startDate': startDate,
         'endDate': endDate,
+        'note': note,
         'intercityTransport': intercityTransport?.toJson(),
         'hotel': hotel?.toJson(),
         'transports': transports.map((t) => t.toJson()).toList(),

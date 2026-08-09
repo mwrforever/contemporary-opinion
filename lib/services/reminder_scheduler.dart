@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
@@ -10,7 +12,8 @@ abstract class ReminderScheduler {
   /// 申请通知与精确闹钟权限
   Future<void> requestPermissions();
 
-  /// 精确调度一条通知（[when] 为本地绝对时刻）
+  /// 精确调度一条通知（[when] 为本地绝对时刻）；
+  /// [vibrate] 为 true 时通知带显式震动 pattern（荣耀等 ROM 默认不震，必须显式指定）。
   Future<void> zonedSchedule({
     required int id,
     required String title,
@@ -18,6 +21,7 @@ abstract class ReminderScheduler {
     required DateTime when,
     required DateTimeComponents? match,
     required String payload,
+    required bool vibrate,
   });
 
   /// 取消单条通知
@@ -90,13 +94,14 @@ class ReminderSchedulerIo implements ReminderScheduler {
     required DateTime when,
     required DateTimeComponents? match,
     required String payload,
+    required bool vibrate,
   }) async {
     await _plugin.zonedSchedule(
       id: id,
       title: title,
       body: body,
       scheduledDate: tz.TZDateTime.from(when, tz.local),
-      notificationDetails: const NotificationDetails(
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,
           '任务提醒',
@@ -104,6 +109,12 @@ class ReminderSchedulerIo implements ReminderScheduler {
           importance: Importance.max,
           priority: Priority.high,
           playSound: true,
+          // 荣耀等 ROM 对无 pattern 的通知默认不震，按设置显式指定：
+          // 开启时双震（400ms×2），关闭时禁用震动
+          enableVibration: vibrate,
+          vibrationPattern: vibrate
+              ? Int64List.fromList(const [0, 400, 200, 400])
+              : null,
         ),
         iOS: DarwinNotificationDetails(),
       ),

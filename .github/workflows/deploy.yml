@@ -1,0 +1,44 @@
+name: Deploy (GitHub Pages)
+
+# 在 CI 成功且合入 main 后，自动把 Web 产物部署到 GitHub Pages
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read      # 需要跨工作流下载 CI 产出的 web-build 构件
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Web to GitHub Pages
+    # 仅当 CI 成功且目标分支是 main 才部署（PR 运行不会触发部署）
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download web artifact from CI run
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: web-build
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-build
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -42,9 +42,27 @@ void main() {
     expect(r2.error, '用户名已被占用');
   });
 
-  test('注册：密码少于 6 位返回「密码至少 6 位」', () async {
+  test('注册：纯英文用户名注册成功', () async {
     final r = await AuthService().register(
       username: 'newuser',
+      password: 'mima123456',
+    );
+    expect(r.ok, isTrue);
+    expect(r.error, isNull);
+  });
+
+  test('注册：含中文用户名被拦截，昵称才可用中文', () async {
+    final r = await AuthService().register(
+      username: '小许',
+      password: 'mima123456',
+    );
+    expect(r.ok, isFalse);
+    expect(r.error, '用户名不能包含中文');
+  });
+
+  test('注册：密码少于 6 位返回「密码至少 6 位」', () async {
+    final r = await AuthService().register(
+      username: 'xiaoxu',
       password: '12345',
     );
     expect(r.ok, isFalse);

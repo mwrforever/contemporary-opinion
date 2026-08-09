@@ -169,6 +169,9 @@ class Task {
   /// 是否相对延时重复（DELAYED）
   bool get isDelayed => triggerType == TriggerType.delayed;
 
+  /// 是否一直重复（DELAYED：maxRepeats 为 -1 表示不设上限，永不结束）。
+  bool get repeatsForever => isDelayed && maxRepeats != null && maxRepeats! < 0;
+
   /// 是否日历周期重复（RECURRING）
   bool get isRecurring => triggerType == TriggerType.recurring;
 
@@ -188,7 +191,10 @@ class Task {
   /// - ONCE：直接返回 [scheduledTime]。
   DateTime? nextFireFor(DateTime now) {
     if (isDelayed) {
-      if (maxRepeats != null && repeatCount >= maxRepeats!) return null;
+      // -1 表示一直重复：不受上限约束
+      if (!repeatsForever && maxRepeats != null && repeatCount >= maxRepeats!) {
+        return null;
+      }
       final base = scheduledTime;
       if (base == null) return null;
       return base.add(Duration(seconds: intervalSeconds ?? 0) * repeatCount);
@@ -203,8 +209,8 @@ class Task {
   /// 是否仍有未来发生实例（调度层语义）。
   bool _hasFutureOccurrence(DateTime now) {
     if (isDelayed) {
-      // 未设上限视为无限循环；否则最后一次触发后即死亡
-      return maxRepeats == null || repeatCount < maxRepeats!;
+      // -1 表示一直重复，永远有未来实例；未设上限视为无限循环
+      return repeatsForever || maxRepeats == null || repeatCount < maxRepeats!;
     }
     if (isRecurring) {
       // 周期结束时间已过则不再产生未来实例

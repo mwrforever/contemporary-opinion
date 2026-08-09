@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart' show HapticFeedback, MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'
     show DateTimeComponents;
 
+import '../data/daos/app_settings_dao.dart';
 import '../data/daos/settings_dao.dart';
 import '../data/models/reminder_settings.dart';
 import '../models/task.dart';
@@ -22,12 +24,15 @@ class ReminderService {
     ReminderScheduler? scheduler,
     AudioService? audio,
     TtsService? tts,
+    AppSettingsDao? settingsDao,
     this.enableInAppTimers = true,
     this.voiceLoopTotal = const Duration(seconds: 10),
     this.voiceGap = const Duration(seconds: 2),
   })  : _scheduler = scheduler ?? ReminderSchedulerIo(),
         audio = audio ?? AudioService(),
-        tts = tts ?? TtsService();
+        tts = tts ?? TtsService(),
+        _settingsDao = settingsDao ?? AppSettingsDao();
+  final AppSettingsDao _settingsDao;
 
   final ReminderScheduler _scheduler;
   final AudioService audio;
@@ -53,6 +58,11 @@ class ReminderService {
     await audio.init();
     await tts.init();
     await _scheduler.init(onPayload: _fireAlertById);
+    // 应用用户持久化的播报音色（读取失败保持默认音色，不阻断启动）
+    try {
+      final voiceId = await _settingsDao.get(AppSettingsDao.kTtsVoiceIdKey);
+      await tts.setVoice(voiceId);
+    } catch (_) {}
   }
 
   /// 申请通知与精确闹钟权限
@@ -100,15 +110,22 @@ class ReminderService {
         when: entry.value,
         match: _matchComponents(task),
         payload: task.id,
+        // 震动为独立开关（可叠加）：决定通知是否携带显式震动 pattern
+        vibrate: _settings.vibrate,
       );
     }
     _scheduleInAppTimer(task);
   }
 
-  /// 按重复类型派生通知 id（工作日/自定义星期以 base*10+w 派生子 id）
+  /// 按重复类型派生通知 id（工作日/自定义星期以 base*10+w 派生子 id；
+  /// 倒计时重复按当前进度取下一次触发时间，进度用尽则不排）。
   Map<int, DateTime> _notificationIdsFor(Task task) {
     final base = task.notificationId;
     if (task.scheduledTime == null) return {};
+    if (task.isDelayed) {
+      final next = task.nextFireFor(DateTime.now());
+      return next == null ? {} : {base: next};
+    }
     switch (task.repeat) {
       case RepeatType.daily:
         return {base: task.scheduledTime!};
@@ -189,6 +206,8 @@ class ReminderService {
 
   DateTime? _nextFire(Task task) {
     if (task.scheduledTime == null) return null;
+    // 倒计时重复：按当前进度取下一次触发时间（进度用尽返回 null，不再排）
+    if (task.isDelayed) return task.nextFireFor(DateTime.now());
     if (task.repeat == RepeatType.none) return task.scheduledTime;
     var when = task.scheduledTime!;
     final now = DateTime.now();
@@ -210,16 +229,48 @@ class ReminderService {
     unawaited(_runAlert(task));
   }
 
+  /// 触发到点震动：原生 Vibrator 循环波形（真马达，持续到 [stopVibration]），
+  /// 通道不可用（非 Android 构建/异常）时回退一次性触感反馈。
+  Future<void> _vibrateMotor() async {
+    try {
+      await _vibrateChannel.invokeMethod<void>('vibrate');
+    } catch (_) {
+      try {
+        HapticFeedback.vibrate();
+      } catch (_) {
+        // 无震动马达/平台不支持时静默
+      }
+    }
+  }
+
+  /// 停止持续震动（响铃窗口结束 / 用户中断提醒时调用，避免马达一直震）。
+  Future<void> _stopVibration() async {
+    try {
+      await _vibrateChannel.invokeMethod<void>('cancel');
+    } catch (_) {
+      // 通道不可用（回退触感反馈路径）时无需停止
+    }
+  }
+
+  /// 原生马达震动通道（见 MainActivity#configureFlutterEngine）
+  static const MethodChannel _vibrateChannel =
+      MethodChannel('daily_planner/vibrate');
+
   /// 实际执行响铃 + 语音循环播报（异步）。可被 [_stopAlert] 立即中断。
   Future<void> _runAlert(Task task) async {
     _alertStopFlags.remove(task.id); // 清除上一轮（重复任务）残留，避免误杀本轮
     final text = _speakText(task);
     final start = DateTime.now();
 
-    // 静音模式：到点不发声音（仅依赖系统通知展示）；否则响铃 + 语音播报
-    if (_settings.mode != ReminderMode.mute) {
-      unawaited(audio.playRing(duration: voiceLoopTotal));
+    // 震动可叠加（静音同样生效）：响铃时长内持续震动（原生马达循环波形），
+    // 窗口结束统一停止；系统通知侧也已按设置携带震动 pattern（应用被杀时兜底）。
+    if (_settings.vibrate) {
+      unawaited(_vibrateMotor());
+    }
 
+    // 静音模式：到点不发声音（仅依赖系统通知展示）；
+    // 否则纯语音播报标题（不再叠加响铃音，避免「哔哔」声）。
+    if (_settings.mode != ReminderMode.mute) {
       while (DateTime.now().difference(start) < voiceLoopTotal) {
         if (_alertStopFlags.contains(task.id)) break;
         try {
@@ -232,13 +283,56 @@ class ReminderService {
         if (DateTime.now().difference(start) >= voiceLoopTotal) break;
         await Future.delayed(voiceGap);
       }
+    } else if (_settings.vibrate) {
+      // 静音 + 震动：无语音可播，按响铃时长持续震动后收尾
+      while (DateTime.now().difference(start) < voiceLoopTotal) {
+        if (_alertStopFlags.contains(task.id)) break;
+        await Future.delayed(voiceGap);
+      }
     }
+    await _stopVibration();
     _alertStopFlags.remove(task.id);
+    // 播报会话结束后检查任务后续走向（推进下次执行时间 / 标记完成）
+    await _afterAlert(task);
+  }
+
+  /// 语音播报会话结束后检查任务是否需要继续执行：
+  /// - 倒计时重复（DELAYED）：本次已播报，推进次数并更新下次执行时间；
+  ///   次数用尽自动标记已完成并取消调度。
+  /// - 日历周期重复（RECURRING）：仍有未来实例，衔接应用内 Timer 到下一次。
+  /// - 一次性（ONCE）：播报完成即无需再执行，标记已完成并取消调度。
+  Future<void> _afterAlert(Task task) async {
+    final store = _store;
+    if (store == null) return;
+    // 以存储中的最新状态为准：播报期间用户可能已手动完成/删除
+    final current = store.getById(task.id);
+    if (current == null || current.status == TaskStatus.done) return;
+    final now = DateTime.now();
+    if (current.isDelayed) {
+      // 复用「完成本次」推进语义：次数 +1；用尽置 done，-1 一直重复保持 pending
+      await store.toggleDoneAt(current, now);
+      if (current.status == TaskStatus.done) {
+        await cancelTask(current);
+      } else {
+        // 仍需执行：重排系统通知与应用内 Timer 到下一次触发时间
+        await _scheduleTask(current);
+      }
+      return;
+    }
+    if (current.isRecurring) {
+      // 周期任务通知已按星期注册，这里只衔接应用内 Timer
+      _scheduleInAppTimer(current);
+      return;
+    }
+    // 一次性任务：播报完即完成，取消后续调度
+    await store.toggleDoneAt(current, now);
+    await cancelTask(current);
   }
 
   /// 立即中断某任务的响铃与语音播报（由取消任务 / 全局停止调用）。
   Future<void> _stopAlert(String taskId) async {
     _alertStopFlags.add(taskId);
+    await _stopVibration();
     try {
       await audio.stopRing();
     } catch (_) {}
@@ -263,6 +357,7 @@ class ReminderService {
     }
     _timers.clear();
     _alertStopFlags.clear();
+    await _stopVibration();
     await audio.stopRing();
     await tts.stop();
   }

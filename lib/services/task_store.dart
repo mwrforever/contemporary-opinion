@@ -64,14 +64,11 @@ class TaskStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 切换完成状态。
+  /// 切换完成状态（由提醒引擎播报完成后自动调用；不再提供手动入口）。
   ///
   /// 重复任务采用「完成今天这一次」语义：把种子滚动到下一次发生（[Task.nextOccurrence]），
   /// 状态保持 [TaskStatus.pending]，链条留存，**明天仍会提醒**（notifyTaskChanged 走
   /// reschedule 分支）。非重复任务维持原 done/pending 切换。
-  Future<void> toggleDone(Task task) => toggleDoneAt(task, DateTime.now());
-
-  /// [toggleDone] 的核心逻辑（可注入 [now]，便于测试）。
   Future<void> toggleDoneAt(Task task, DateTime now) async {
     if (task.isDelayed) {
       // 倒计时重复：完成本次后推进次数；达到上限则任务完成（死任务），否则继续下一次
@@ -80,7 +77,12 @@ class TaskStore extends ChangeNotifier {
           : task.scheduledTime!.add(
               Duration(seconds: task.intervalSeconds ?? 0) * task.repeatCount);
       task.repeatCount += 1;
-      if (task.maxRepeats != null && task.repeatCount >= task.maxRepeats!) {
+      // -1 表示一直重复：完成本次后继续下一次，永不标记完成
+      if (task.repeatsForever) {
+        task.status = TaskStatus.pending;
+        task.completedAt = now;
+      } else if (task.maxRepeats != null &&
+          task.repeatCount >= task.maxRepeats!) {
         task.status = TaskStatus.done;
         task.completedAt = now;
       } else {

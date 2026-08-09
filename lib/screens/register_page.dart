@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import '../theme/theme_controller.dart';
 import 'login_page.dart';
 import 'main_page.dart';
 
@@ -50,7 +51,10 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => MainPage(authService: _auth)),
+      MaterialPageRoute(
+        builder: (_) =>
+            MainPage(authService: _auth, theme: ThemeScope.of(context)),
+      ),
     );
   }
 
@@ -67,13 +71,24 @@ class _RegisterPageState extends State<RegisterPage> {
               children: [
                 TextFormField(
                   controller: _usernameController,
+                  // 荣耀等机型 IME 对带自动纠正/联想标志的普通字段不弹软键盘，
+                  // 与可用的密码字段对齐，关闭 autocorrect/enableSuggestions
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: const InputDecoration(
                     labelText: '用户名（唯一）',
+                    helperText: '不能包含中文，昵称可自由设置',
                     prefixIcon: Icon(Icons.person_outline),
                     border: OutlineInputBorder(),
                   ),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? '用户名不能为空' : null,
+                  validator: (v) {
+                    final name = v?.trim() ?? '';
+                    if (name.isEmpty) return '用户名不能为空';
+                    if (name.contains(RegExp(r'[\u4e00-\u9fff]'))) {
+                      return '用户名不能包含中文';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -111,6 +126,9 @@ class _RegisterPageState extends State<RegisterPage> {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _nicknameController,
+                  // 与用户名同理：关闭自动纠正/联想，保证荣耀机型软键盘可弹出
+                  autocorrect: false,
+                  enableSuggestions: false,
                   decoration: const InputDecoration(
                     labelText: '昵称（可选）',
                     prefixIcon: Icon(Icons.badge_outlined),

@@ -156,4 +156,31 @@ void main() {
     expect(saved.status, TaskStatus.done);
     expect(saved.isDeadDoneAt(now), isTrue);
   });
+
+  test('toggleDone：maxRepeats=-1 一直重复，完成本次后永不结束', () async {
+    final store = TaskStore(userId: 1);
+    await store.init();
+    final forever = Task(
+      id: '无限喝水',
+      title: '无限喝水',
+      scheduledTime: DateTime(2026, 8, 5, 8, 0),
+      triggerType: TriggerType.delayed,
+      intervalSeconds: 1800,
+      maxRepeats: -1,
+      repeatCount: 0,
+      createdAt: DateTime(2026, 8, 1),
+      notificationId: 1,
+    );
+    await store.add(forever);
+    final now = DateTime(2026, 8, 5, 8, 10);
+    // 连续完成多次：状态保持待执行，次数持续推进
+    await store.toggleDoneAt(store.getById('无限喝水')!, now);
+    await store.toggleDoneAt(store.getById('无限喝水')!, now);
+    final saved = store.getById('无限喝水')!;
+    expect(saved.status, TaskStatus.pending);
+    expect(saved.repeatCount, 2);
+    expect(saved.repeatsForever, isTrue);
+    expect(saved.nextFireTime, DateTime(2026, 8, 5, 9, 0));
+    expect(saved.isDeadDoneAt(now), isFalse);
+  });
 }

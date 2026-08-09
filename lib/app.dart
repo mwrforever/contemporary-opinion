@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'data/models/user.dart';
 import 'screens/login_page.dart';
@@ -10,6 +13,7 @@ import 'services/legacy_notebook_migration.dart';
 import 'services/reminder_service.dart';
 import 'services/task_store.dart';
 import 'theme/app_theme.dart';
+import 'theme/theme_controller.dart';
 
 /// 登录成功后钩子：可用于旧数据迁移等一次性的启动期任务。
 typedef LoggedInHook = Future<void> Function(int userId);
@@ -24,7 +28,7 @@ Future<void> _migrateLegacyData(int userId) async {
 ///
 /// 启动时经 [AuthGate] 读取本地 session：
 /// 已登录直接进 [MainPage]，未登录先展示品牌 [SplashScreen] 再进 [LoginPage]。
-class App extends StatelessWidget {
+class App extends StatefulWidget {
   /// 测试注入用；生产环境由 [AuthGate] 自建默认实现
   final AuthService? authService;
 
@@ -35,27 +39,62 @@ class App extends StatelessWidget {
   final TaskStore? taskStore;
   final ReminderService? reminder;
 
+  /// 测试注入用；生产由 App 自建并负责加载/持久化主题档位
+  final ThemeController? theme;
+
   const App({
     super.key,
     this.authService,
     this.onLoggedIn,
     this.taskStore,
     this.reminder,
+    this.theme,
   });
 
   @override
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  /// 全局主题控制器：跟随系统/浅色/深色三档，持久化于设备级设置。
+  late final ThemeController _theme = widget.theme ?? ThemeController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 启动期异步加载持久化主题档位（读取失败保持跟随系统）
+    unawaited(_theme.load());
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '时说',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
-      home: AuthGate(
-        authService: authService ?? AuthService(),
-        onLoggedIn: onLoggedIn ?? _migrateLegacyData,
-        taskStore: taskStore,
-        reminder: reminder,
+    // 监听主题档位变更，即时重建 MaterialApp（登录前页面同样生效）
+    return ListenableBuilder(
+      listenable: _theme,
+      builder: (context, _) => ThemeScope(
+        controller: _theme,
+        child: MaterialApp(
+          title: '时说',
+          debugShowCheckedModeBanner: false,
+          // 全应用固定中文：日期/时间选择器等组件文案（确定/取消、星期月份）均为中文
+          locale: const Locale('zh', 'CN'),
+          supportedLocales: const [Locale('zh', 'CN')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: _theme.mode,
+          home: AuthGate(
+            authService: widget.authService ?? AuthService(),
+            onLoggedIn: widget.onLoggedIn ?? _migrateLegacyData,
+            taskStore: widget.taskStore,
+            reminder: widget.reminder,
+            theme: _theme,
+          ),
+        ),
       ),
     );
   }
@@ -67,6 +106,7 @@ class AuthGate extends StatefulWidget {
   final LoggedInHook onLoggedIn;
   final TaskStore? taskStore;
   final ReminderService? reminder;
+  final ThemeController? theme;
 
   const AuthGate({
     super.key,
@@ -74,6 +114,7 @@ class AuthGate extends StatefulWidget {
     required this.onLoggedIn,
     this.taskStore,
     this.reminder,
+    this.theme,
   });
 
   @override
@@ -108,6 +149,7 @@ class _AuthGateState extends State<AuthGate> {
           userId: user.id ?? 0,
           taskStore: widget.taskStore,
           reminder: widget.reminder,
+          theme: widget.theme,
         );
       },
     );

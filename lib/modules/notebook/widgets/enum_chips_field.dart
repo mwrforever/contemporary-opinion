@@ -2,11 +2,11 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-/// 枚举 chip 折叠组件：子项多时最多展示 [maxRows] 行，其余折叠可展开。
+/// 单选枚举 chip 折叠组件：子项多时最多展示 [maxRows] 行，其余折叠可展开。
 ///
 /// 折叠态用固定高度裁剪 + 底部渐隐 + 「展开全部（N）」按钮；展开态展示全部
 /// 并显示「收起」。依赖 [countChipsInRows] 纯函数计算可见数量。
-class EnumChipsField extends StatefulWidget {
+class EnumChipsField extends StatelessWidget {
   final List<String> values;
   final String selected;
   final ValueChanged<String> onChanged;
@@ -21,10 +21,64 @@ class EnumChipsField extends StatefulWidget {
   });
 
   @override
-  State<EnumChipsField> createState() => _EnumChipsFieldState();
+  Widget build(BuildContext context) => _EnumChipGroup(
+        values: values,
+        maxRows: maxRows,
+        isSelected: (v) => v == selected,
+        onTap: onChanged,
+      );
 }
 
-class _EnumChipsFieldState extends State<EnumChipsField> {
+/// 多选枚举 chip 折叠组件（如行程打卡点的计费类型多选）。
+///
+/// 交互与折叠样式与 [EnumChipsField] 完全一致，区别是点选为「切换勾选」，
+/// 通过 [selected] 集合与 [onChanged] 双向同步，不改动原集合。
+class MultiEnumChipsField extends StatelessWidget {
+  final List<String> values;
+  final Set<String> selected;
+  final ValueChanged<Set<String>> onChanged;
+  final int maxRows;
+
+  const MultiEnumChipsField({
+    super.key,
+    required this.values,
+    required this.selected,
+    required this.onChanged,
+    this.maxRows = 2,
+  });
+
+  @override
+  Widget build(BuildContext context) => _EnumChipGroup(
+        values: values,
+        maxRows: maxRows,
+        isSelected: selected.contains,
+        onTap: (v) {
+          final next = Set<String>.from(selected);
+          if (!next.add(v)) next.remove(v);
+          onChanged(next);
+        },
+      );
+}
+
+/// 折叠枚举 chip 组通用实现：单选/多选共用同一套折叠交互与选中样式。
+class _EnumChipGroup extends StatefulWidget {
+  final List<String> values;
+  final bool Function(String) isSelected;
+  final ValueChanged<String> onTap;
+  final int maxRows;
+
+  const _EnumChipGroup({
+    required this.values,
+    required this.isSelected,
+    required this.onTap,
+    required this.maxRows,
+  });
+
+  @override
+  State<_EnumChipGroup> createState() => _EnumChipGroupState();
+}
+
+class _EnumChipGroupState extends State<_EnumChipGroup> {
   bool _expanded = false;
 
   @override
@@ -43,13 +97,13 @@ class _EnumChipsFieldState extends State<EnumChipsField> {
         style: style,
       );
       final showToggle = visibleCount < widget.values.length;
-      final shown =
-          _expanded ? widget.values : widget.values.take(visibleCount).toList();
+      final shown = _expanded
+          ? widget.values
+          : widget.values.take(visibleCount).toList();
       const rowHeight = 38.0; // chip 高（padding 9*2 + 行高 20）
       const gap = 8.0;
       final chips = [
-        for (final v in shown)
-          _chip(v, style, scheme, () => widget.onChanged(v)),
+        for (final v in shown) _chip(v, style, scheme),
       ];
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,11 +173,10 @@ class _EnumChipsFieldState extends State<EnumChipsField> {
     });
   }
 
-  Widget _chip(
-      String label, TextStyle style, ColorScheme scheme, VoidCallback onTap) {
-    final active = label == widget.selected;
+  Widget _chip(String label, TextStyle style, ColorScheme scheme) {
+    final active = widget.isSelected(label);
     return GestureDetector(
-      onTap: onTap,
+      onTap: () => widget.onTap(label),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(

@@ -336,6 +336,7 @@ class TripDao extends _BaseNotebookDao {
           'homeCity': tr['home_city'],
           'startDate': tr['start_date'],
           'endDate': tr['end_date'],
+          'note': tr['note'],
           'intercityTransport': _decodeMap(tr['intercity_transport']),
           'hotel': _decodeMap(tr['hotel']),
           'transports': _decodeList(tr['transports']),
@@ -369,6 +370,7 @@ class TripDao extends _BaseNotebookDao {
         'home_city': trip.homeCity,
         'start_date': trip.startDate,
         'end_date': trip.endDate,
+        'note': trip.note,
         'intercity_transport':
             trip.intercityTransport == null ? null : jsonEncode(trip.intercityTransport!.toJson()),
         'hotel': trip.hotel == null ? null : jsonEncode(trip.hotel!.toJson()),

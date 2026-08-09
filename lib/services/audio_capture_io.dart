@@ -15,6 +15,9 @@ class AudioCapture {
   /// 是否正在录音（供 ASR 服务防御性释放残留会话）。
   bool get isRecording => _recording;
 
+  /// 移动端 record 遵守请求率，恒为 16000。
+  int get realSampleRate => 16000;
+
   /// 开始流式录音，返回 PCM16@16k 单声道字节流。
   Future<Stream<Uint8List>> startStream() async {
     if (_recording) throw StateError('已在录音');

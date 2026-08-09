@@ -147,4 +147,36 @@ void main() {
     expect(exhausted.nextFireFor(now), isNull);
     expect(exhausted.isDeadDoneAt(now), isTrue);
   });
+
+  test('倒计时重复：maxRepeats=-1 一直重复，永不死亡', () {
+    final forever = Task(
+      id: 't-forever',
+      title: '无限喝水',
+      scheduledTime: DateTime(2026, 8, 5, 8, 0),
+      triggerType: TriggerType.delayed,
+      intervalSeconds: 1800,
+      maxRepeats: -1,
+      repeatCount: 3,
+      createdAt: DateTime(2026, 8, 1),
+      notificationId: 1,
+    );
+    expect(forever.repeatsForever, isTrue);
+    // 次数持续增长仍有下一次触发，不因次数大而终止
+    final now = DateTime(2026, 8, 5, 8, 10);
+    expect(forever.nextFireFor(now), DateTime(2026, 8, 5, 9, 30));
+    // 一直重复的任务即使已完成也仍有未来实例（不应落入「死任务」口径）
+    final doneForever = Task(
+      id: 't-forever-done',
+      title: '无限喝水',
+      scheduledTime: DateTime(2026, 8, 5, 8, 0),
+      triggerType: TriggerType.delayed,
+      intervalSeconds: 1800,
+      maxRepeats: -1,
+      repeatCount: 1,
+      status: TaskStatus.done,
+      createdAt: DateTime(2026, 8, 1),
+      notificationId: 1,
+    );
+    expect(doneForever.isDeadDoneAt(now), isFalse);
+  });
 }

@@ -106,7 +106,9 @@ class _NotebookTabState extends State<NotebookTab> {
           crossAxisCount: 2,
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.5,
+          // 固定卡高而非宽高比：窄屏（320px 级）下卡片内容不再溢出，
+          // 避免调试模式在卡片下方渲染红色 RenderFlex overflow 提示。
+          mainAxisExtent: 132,
         ),
         itemCount: items.length,
         itemBuilder: (context, i) {

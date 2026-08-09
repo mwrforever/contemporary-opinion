@@ -226,6 +226,10 @@ class _MetaLine extends StatelessWidget {
             ? '${secs ~/ 60} 分钟'
             : '$secs 秒';
     final total = task.maxRepeats;
+    if (task.repeatsForever) {
+      // 一直重复：不显示上限，仅展示当前次数
+      return '每 $unit · 第 ${task.repeatCount + 1} 次';
+    }
     return total == null ? '每 $unit' : '每 $unit · 第 ${task.repeatCount + 1}/$total 次';
   }
 

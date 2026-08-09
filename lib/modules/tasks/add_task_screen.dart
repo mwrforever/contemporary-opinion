@@ -48,15 +48,22 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
     final t = widget.editTask;
     _title = TextEditingController(text: t?.title ?? '');
     _resourceController.text = t?.resource ?? '';
+    // 新建任务资源占用时长默认 1 分钟；编辑时沿用已保存值
     _durationController.text = t != null && t.durationMinutes > 0
         ? '${t.durationMinutes}'
-        : '';
+        : (t == null ? '1' : '');
     _ringController.text = t?.ringSeconds?.toString() ?? '';
     if (t?.isDelayed == true) {
-      // 倒计时重复任务：编辑时还原为倒计时模式 + 间隔/次数
+      // 倒计时重复任务：编辑时还原为倒计时模式 + 间隔/次数（-1 表示一直重复）
       _useCountdown = true;
       _countdownMinutes = (t!.intervalSeconds ?? 0) ~/ 60;
       _countdownRepeats = t.maxRepeats ?? 1;
+    } else if (t?.countdownMinutes != null || t?.countdownSeconds != null) {
+      // 一次性倒计时任务：编辑时同样还原为倒计时模式（重复次数保持 1）
+      _useCountdown = true;
+      final minutes =
+          t!.countdownMinutes ?? ((t.intervalSeconds ?? 1800) ~/ 60);
+      _countdownMinutes = minutes > 0 ? minutes : 1;
     }
     if (t?.scheduledTime != null) {
       _date = t!.scheduledTime!;
@@ -112,8 +119,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
 
     final duration = int.tryParse(_durationController.text) ?? 0;
     final ring = int.tryParse(_ringController.text);
+    // 重复次数管理重复：1 为单次提醒，>1 按间隔重复，-1 表示一直重复
     final repeats = _useCountdown ? _countdownRepeats : 1;
-    final isDelayedCountdown = _useCountdown && repeats > 1;
+    final isDelayedCountdown = _useCountdown && repeats != 1;
     final resource =
         _resourceController.text.trim().isEmpty
             ? null
@@ -123,15 +131,29 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       final t = widget.editTask!;
       t.title = _title.text.trim();
       t.scheduledTime = when;
-      t.repeat = _repeat;
-      t.customWeekdays = _repeat == RepeatType.custom
-          ? (_weekdays.toList()..sort())
-          : const [];
+      if (_useCountdown) {
+        // 倒计时任务不叠加日历重复：由重复次数决定 DELAYED/ONCE
+        t.repeat = RepeatType.none;
+        t.customWeekdays = const [];
+        t.triggerType =
+            isDelayedCountdown ? TriggerType.delayed : TriggerType.once;
+        t.intervalSeconds = isDelayedCountdown ? _countdownMinutes * 60 : null;
+        t.maxRepeats = isDelayedCountdown ? repeats : null;
+      } else {
+        t.repeat = _repeat;
+        t.customWeekdays = _repeat == RepeatType.custom
+            ? (_weekdays.toList()..sort())
+            : const [];
+        t.triggerType =
+            _repeat == RepeatType.none ? TriggerType.once : TriggerType.recurring;
+        t.intervalSeconds = null;
+        t.maxRepeats = null;
+      }
       t.resource = resource;
       t.durationMinutes = duration;
       t.ringSeconds = ring;
       await widget.store.recheck(t);
-      await widget.reminder.notifyTaskChanged(t);
+      await _notifyChanged(t);
     } else {
       final task = Task(
         id: const Uuid().v4(),
@@ -142,10 +164,10 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         intervalSeconds: isDelayedCountdown ? _countdownMinutes * 60 : null,
         maxRepeats: isDelayedCountdown ? repeats : null,
         nextFireTime: isDelayedCountdown ? when : null,
-        repeat: _repeat,
-        customWeekdays: _repeat == RepeatType.custom
-            ? (_weekdays.toList()..sort())
-            : const [],
+        repeat: _useCountdown ? RepeatType.none : _repeat,
+        customWeekdays: _useCountdown
+            ? const []
+            : (_repeat == RepeatType.custom ? (_weekdays.toList()..sort()) : const []),
         resource: resource,
         durationMinutes: duration,
         ringSeconds: ring,
@@ -153,10 +175,21 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         notificationId: now.millisecondsSinceEpoch ~/ 1000 % 1000000,
       );
       await widget.store.addWithConflictCheck(task);
-      await widget.reminder.notifyTaskChanged(task);
+      await _notifyChanged(task);
     }
     if (!mounted) return;
     Navigator.of(context).pop();
+  }
+
+  /// 提醒编排失败（如通知权限缺失）不阻断保存与关闭页面。
+  ///
+  /// 任务已落库，后续权限开启后 [ReminderService.scheduleAll] 会补齐调度。
+  Future<void> _notifyChanged(Task task) async {
+    try {
+      await widget.reminder.notifyTaskChanged(task);
+    } catch (_) {
+      // 调度失败静默，不打断「保存后关闭新增界面」
+    }
   }
 
   @override
@@ -172,6 +205,10 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               _sectionTitle('基本信息'),
               TextFormField(
                 controller: _title,
+                // 荣耀等机型 IME 对带自动纠正/联想标志的字段不弹软键盘，
+                // 与可用的密码字段对齐，统一关闭 autocorrect/enableSuggestions
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '标题',
                   hintText: '如：明早 9 点开会',
@@ -192,10 +229,13 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               const SizedBox(height: 12),
               if (_useCountdown)
                 Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     TextFormField(
                       initialValue: '$_countdownMinutes',
                       keyboardType: TextInputType.number,
+                      autocorrect: false,
+                      enableSuggestions: false,
                       decoration: const InputDecoration(
                         labelText: '每隔（分钟）',
                         suffixText: '分钟提醒一次',
@@ -212,13 +252,17 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                     TextFormField(
                       initialValue: '$_countdownRepeats',
                       keyboardType: TextInputType.number,
+                      autocorrect: false,
+                      enableSuggestions: false,
                       decoration: const InputDecoration(
                         labelText: '重复次数',
-                        helperText: '1 表示仅提醒一次；大于 1 按间隔重复',
+                        helperText: '默认 1 次；-1 表示一直重复',
                       ),
                       validator: (v) {
                         final n = int.tryParse(v ?? '');
-                        if (n == null || n <= 0) return '请输入大于 0 的次数';
+                        if (n == null || n < -1 || n == 0) {
+                          return '请输入大于 0 的次数，-1 表示一直重复';
+                        }
                         return null;
                       },
                       onChanged: (v) =>
@@ -249,47 +293,52 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                   ],
                 ),
               ],
-              _sectionTitle('重复'),
-              DropdownButtonFormField<RepeatType>(
-                initialValue: _repeat,
-                items: const [
-                  DropdownMenuItem(value: RepeatType.none, child: Text('不重复')),
-                  DropdownMenuItem(value: RepeatType.daily, child: Text('每天')),
-                  DropdownMenuItem(value: RepeatType.weekly, child: Text('每周')),
-                  DropdownMenuItem(
-                    value: RepeatType.weekdays,
-                    child: Text('工作日'),
-                  ),
-                  DropdownMenuItem(
-                    value: RepeatType.custom,
-                    child: Text('自定义星期'),
+              if (!_useCountdown) ...[
+                _sectionTitle('重复'),
+                DropdownButtonFormField<RepeatType>(
+                  initialValue: _repeat,
+                  items: const [
+                    DropdownMenuItem(value: RepeatType.none, child: Text('不重复')),
+                    DropdownMenuItem(value: RepeatType.daily, child: Text('每天')),
+                    DropdownMenuItem(value: RepeatType.weekly, child: Text('每周')),
+                    DropdownMenuItem(
+                      value: RepeatType.weekdays,
+                      child: Text('工作日'),
+                    ),
+                    DropdownMenuItem(
+                      value: RepeatType.custom,
+                      child: Text('自定义星期'),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _repeat = v ?? RepeatType.none),
+                ),
+                if (_repeat == RepeatType.custom) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (var w = 1; w <= 7; w++)
+                        ChoiceChip(
+                          label: Text(
+                              '周${['一', '二', '三', '四', '五', '六', '日'][w - 1]}'),
+                          selected: _weekdays.contains(w),
+                          onSelected: (sel) => setState(() {
+                            if (sel) {
+                              _weekdays.add(w);
+                            } else {
+                              _weekdays.remove(w);
+                            }
+                          }),
+                        ),
+                    ],
                   ),
                 ],
-                onChanged: (v) => setState(() => _repeat = v ?? RepeatType.none),
-              ),
-              if (_repeat == RepeatType.custom) ...[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (var w = 1; w <= 7; w++)
-                      ChoiceChip(
-                        label: Text('周${['一', '二', '三', '四', '五', '六', '日'][w - 1]}'),
-                        selected: _weekdays.contains(w),
-                        onSelected: (sel) => setState(() {
-                          if (sel) {
-                            _weekdays.add(w);
-                          } else {
-                            _weekdays.remove(w);
-                          }
-                        }),
-                      ),
-                  ],
-                ),
               ],
               _sectionTitle('资源与时长'),
               TextFormField(
                 controller: _resourceController,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '资源（可选）',
                   hintText: '如：会议室A、车',
@@ -299,6 +348,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               TextFormField(
                 controller: _durationController,
                 keyboardType: TextInputType.number,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '时长（分钟，可选）',
                   hintText: '0 表示仅提醒不占时段',
@@ -308,6 +359,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
               TextFormField(
                 controller: _ringController,
                 keyboardType: TextInputType.number,
+                autocorrect: false,
+                enableSuggestions: false,
                 decoration: const InputDecoration(
                   labelText: '响铃（秒，可选）',
                   hintText: '留空使用默认',

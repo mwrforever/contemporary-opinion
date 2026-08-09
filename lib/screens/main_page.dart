@@ -9,6 +9,7 @@ import '../services/backup_service.dart';
 import '../services/notebook_store.dart';
 import '../services/reminder_service.dart';
 import '../services/task_store.dart';
+import '../theme/theme_controller.dart';
 import 'profile_page.dart';
 
 /// 主界面：三 Tab 外壳（任务 / 记事本 / 我的），对应设计稿底部导航。
@@ -23,6 +24,7 @@ class MainPage extends StatefulWidget {
     this.taskStore,
     this.reminder,
     this.notebookStore,
+    this.theme,
   });
 
   final AuthService? authService;
@@ -30,6 +32,7 @@ class MainPage extends StatefulWidget {
   final TaskStore? taskStore;
   final ReminderService? reminder;
   final NotebookStore? notebookStore;
+  final ThemeController? theme;
 
   @override
   State<MainPage> createState() => _MainPageState();
@@ -43,12 +46,16 @@ class _MainPageState extends State<MainPage> {
       widget.reminder ?? ReminderService();
   late final NotebookStore _notebook =
       widget.notebookStore ?? NotebookStore(userId: widget.userId);
+  late final ThemeController _theme;
   int _index = 0;
-  String _displayName = '朋友';
+  // 展示名以登录用户资料为准；加载完成前不显示占位昵称
+  String _displayName = '';
 
   @override
   void initState() {
     super.initState();
+    // 复用全局主题控制器（登录流程进入时未显式传入也能共享）
+    _theme = widget.theme ?? ThemeScope.of(context);
     // 读取昵称用于首页问候语；同时初始化提醒服务并重排全部任务
     unawaited(_init());
   }
@@ -88,6 +95,7 @@ class _MainPageState extends State<MainPage> {
             auth: _auth,
             backup: BackupService(),
             reminder: _reminder,
+            theme: _theme,
           ),
         ],
       ),
