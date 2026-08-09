@@ -51,13 +51,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
-            cat > android/key.properties <<'EOF'
-            storeFile=upload-keystore.jks
-            storePassword=$KEYSTORE_PASSWORD
-            keyAlias=$KEY_ALIAS
-            keyPassword=$KEY_PASSWORD
-            EOF
+            printf '%s\n' "$KEYSTORE_BASE64" | base64 -d > android/upload-keystore.jks
+            printf 'storeFile=upload-keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
             echo "正式签名已配置（key.properties 已生成）"
           else
             echo "未配置 KEYSTORE_BASE64，构建将回退 debug 签名"
