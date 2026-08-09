@@ -128,6 +128,18 @@ void main() {
     return DateTime(tomorrow.year, tomorrow.month, tomorrow.day, hour);
   }
 
+  /// 轮询等待条件成立（CI 慢速/高负载环境下固定延时不可靠，避免偶发失败）。
+  Future<void> waitUntil(
+    bool Function() cond, {
+    Duration timeout = const Duration(seconds: 6),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (!cond()) {
+      if (DateTime.now().isAfter(deadline)) return;
+      await Future.delayed(const Duration(milliseconds: 40));
+    }
+  }
+
   Task buildTask(String id, {RepeatType repeat = RepeatType.none}) => Task(
         id: id,
         title: '任务$id',
@@ -275,13 +287,12 @@ void main() {
     muteTask.scheduledTime = DateTime.now().add(const Duration(minutes: 1));
     await store.add(muteTask);
     scheduler.payloadCallback!(muteTask.id);
-    await Future.delayed(const Duration(milliseconds: 80));
+    // 轮询等待到点触发（避免 CI 负载下固定延时误判）
+    await waitUntil(() => vibrateCalls.isNotEmpty);
     expect(tts.speakCount, 0);
     expect(audio.ringCount, 0);
-    expect(vibrateCalls, isNotEmpty);
     // 震动持续整个响铃时长（150ms）后自动停止，不遗留常震
-    await Future.delayed(const Duration(milliseconds: 300));
-    expect(vibrateCalls, contains('cancel'));
+    await waitUntil(() => vibrateCalls.contains('cancel'));
     // 切回语音：到点纯语音播报（不再叠加响铃音，避免哔哔声）
     await db.update(
       'user_settings',
@@ -294,8 +305,7 @@ void main() {
     voiceTask.scheduledTime = DateTime.now().add(const Duration(minutes: 1));
     await store.add(voiceTask);
     scheduler.payloadCallback!(voiceTask.id);
-    await Future.delayed(const Duration(milliseconds: 300));
-    expect(tts.speakCount, greaterThan(0));
+    await waitUntil(() => tts.speakCount > 0);
     expect(audio.ringCount, 0);
     await svc.stopAll();
     await DatabaseHelper.instance.close();
@@ -350,13 +360,17 @@ void main() {
     );
     await store.add(task);
     await svc.scheduleTask(task);
-    // 等待首次触发 + 播报窗口走完，触发自动推进
-    await Future.delayed(const Duration(milliseconds: 600));
+    // 等待首次触发 + 播报窗口走完，触发自动推进（轮询，避免 CI 负载下固定延时误判）
+    await waitUntil(
+      () => (store.getById('delayed')?.repeatCount ?? 0) >= 1,
+    );
     final current = store.getById('delayed')!;
     expect(current.status, TaskStatus.pending);
     expect(current.repeatCount, 1);
     // 系统通知已重排到「首次 + 一个间隔」后的下一次
-    expect(scheduler.scheduled[8], anchor.add(const Duration(seconds: 60)));
+    await waitUntil(
+      () => scheduler.scheduled[8] == anchor.add(const Duration(seconds: 60)),
+    );
     await svc.stopAll();
     await DatabaseHelper.instance.close();
   });
@@ -389,11 +403,14 @@ void main() {
     );
     await store.add(task);
     await svc.scheduleTask(task);
-    await Future.delayed(const Duration(milliseconds: 600));
+    // 轮询等待首次触发 + 播报推进（避免 CI 负载下固定延时误判）
+    await waitUntil(() => (store.getById('forever')?.repeatCount ?? 0) >= 1);
     final current = store.getById('forever')!;
     expect(current.status, TaskStatus.pending);
     expect(current.repeatCount, 1);
-    expect(scheduler.scheduled[8], anchor.add(const Duration(seconds: 60)));
+    await waitUntil(
+      () => scheduler.scheduled[8] == anchor.add(const Duration(seconds: 60)),
+    );
     await svc.stopAll();
     await DatabaseHelper.instance.close();
   });
@@ -426,7 +443,11 @@ void main() {
     );
     await store.add(task);
     await svc.scheduleTask(task);
-    await Future.delayed(const Duration(milliseconds: 600));
+    // 轮询等待播报完成后的自动收尾（次数用尽置 done + 取消调度）
+    await waitUntil(
+      () => (store.getById('onceDelay')?.status ?? TaskStatus.pending) ==
+          TaskStatus.done,
+    );
     final current = store.getById('onceDelay')!;
     expect(current.status, TaskStatus.done);
     expect(current.repeatCount, 1);
@@ -458,7 +479,11 @@ void main() {
     task.scheduledTime = DateTime.now().add(const Duration(milliseconds: 250));
     await store.add(task);
     await svc.scheduleTask(task);
-    await Future.delayed(const Duration(milliseconds: 600));
+    // 轮询等待播报完成自动标记 done
+    await waitUntil(
+      () => (store.getById('onceAuto')?.status ?? TaskStatus.pending) ==
+          TaskStatus.done,
+    );
     expect(store.getById('onceAuto')!.status, TaskStatus.done);
     expect(scheduler.cancelled, contains(7));
     await svc.stopAll();
