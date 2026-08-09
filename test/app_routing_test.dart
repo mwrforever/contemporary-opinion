@@ -71,4 +71,35 @@ void main() {
     expect(find.text('登录'), findsWidgets);
     expect(await auth.currentUser(), isNull);
   });
+
+  testWidgets('「我的」页修改昵称后首页问候语即时同步', (tester) async {
+    // 放大视口，让「我的」页列表完整构建
+    await tester.binding.setSurfaceSize(const Size(800, 1600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final auth = FakeAuthService(user: buildUser());
+    await tester.pumpWidget(
+      App(
+        authService: auth,
+        onLoggedIn: (_) async {},
+        taskStore: FakeTaskStore(),
+        reminder: buildFakeReminder(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 首页问候语展示原昵称
+    expect(find.textContaining('小许'), findsWidgets);
+    // 切到「我的」修改昵称
+    await tester.tap(find.text('我的'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑昵称'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '新昵称');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    // 切回任务 Tab：问候语已同步为新昵称，不再显示旧昵称
+    await tester.tap(find.text('任务'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('新昵称'), findsWidgets);
+    expect(find.textContaining('小许'), findsNothing);
+  });
 }

@@ -1,3 +1,5 @@
+import 'package:uuid/uuid.dart';
+
 import '../data/daos/session_dao.dart';
 import '../data/daos/user_dao.dart';
 import '../data/models/user.dart';
@@ -44,8 +46,10 @@ class AuthService {
     if (await _userDao.findByUsername(name) != null) {
       return const AuthResult(ok: false, error: '用户名已被占用');
     }
-    final nick =
-        (nickname == null || nickname.trim().isEmpty) ? null : nickname.trim();
+    // 昵称未设置时生成去横线 UUID 作为默认昵称，保证展示名非空
+    final nick = (nickname == null || nickname.trim().isEmpty)
+        ? const Uuid().v4().replaceAll('-', '')
+        : nickname.trim();
     final user = User(
       username: name,
       passwordHash: hash(password),

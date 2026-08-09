@@ -31,6 +31,7 @@ class ProfilePage extends StatefulWidget {
     this.theme,
     this.permissionStatus,
     this.settingsDao,
+    this.onNicknameChanged,
   });
 
   final AuthService auth;
@@ -39,6 +40,9 @@ class ProfilePage extends StatefulWidget {
   final ThemeController? theme;
   final PermissionStatusService? permissionStatus;
   final AppSettingsDao? settingsDao;
+
+  /// 昵称修改成功后的回调（由 MainPage 注入，用于刷新首页问候语）。
+  final VoidCallback? onNicknameChanged;
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -134,6 +138,8 @@ class _ProfilePageState extends State<ProfilePage> {
     if (nickname == null || !mounted) return;
     await widget.auth.updateProfile(nickname: nickname);
     setState(() {});
+    // 通知首页刷新问候语中的昵称
+    widget.onNicknameChanged?.call();
   }
 
   /// 编辑默认响铃时长：数字输入，非法值回退未设置。

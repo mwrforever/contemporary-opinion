@@ -51,6 +51,22 @@ void main() {
     expect(r.error, isNull);
   });
 
+  test('注册：未填昵称时生成去横线 UUID 作为默认昵称', () async {
+    final r = await AuthService().register(
+      username: 'uuiduser',
+      password: 'mima123456',
+      nickname: '   ',
+    );
+    expect(r.ok, isTrue);
+    final nick = r.user!.nickname!;
+    expect(nick, isNotEmpty);
+    expect(nick.contains('-'), isFalse);
+    expect(nick.length, 32); // UUID v4 去横线后固定 32 位
+    // 默认昵称持久化，登录后可读回
+    final current = await AuthService().currentUser();
+    expect(current!.nickname, nick);
+  });
+
   test('注册：含中文用户名被拦截，昵称才可用中文', () async {
     final r = await AuthService().register(
       username: '小许',

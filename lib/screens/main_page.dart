@@ -61,13 +61,7 @@ class _MainPageState extends State<MainPage> {
   }
 
   Future<void> _init() async {
-    final user = await _auth.currentUser();
-    if (user != null && mounted) {
-      final name = user.nickname?.isNotEmpty == true
-          ? user.nickname!
-          : user.username;
-      if (name.isNotEmpty) setState(() => _displayName = name);
-    }
+    await _refreshDisplayName();
     try {
       await _reminder.init(_store);
       await _reminder.reloadSettings(widget.userId);
@@ -75,6 +69,17 @@ class _MainPageState extends State<MainPage> {
     } catch (_) {
       // 提醒初始化失败不阻断主流程
     }
+  }
+
+  /// 重新读取当前用户资料并刷新问候语展示名；
+  /// 供「我的」页修改昵称后回调，保证首页昵称即时同步。
+  Future<void> _refreshDisplayName() async {
+    final user = await _auth.currentUser();
+    if (user == null || !mounted) return;
+    final name = user.nickname?.isNotEmpty == true
+        ? user.nickname!
+        : user.username;
+    if (name != _displayName) setState(() => _displayName = name);
   }
 
   @override
@@ -96,6 +101,8 @@ class _MainPageState extends State<MainPage> {
             backup: BackupService(),
             reminder: _reminder,
             theme: _theme,
+            // 昵称修改后刷新首页问候语
+            onNicknameChanged: _refreshDisplayName,
           ),
         ],
       ),
