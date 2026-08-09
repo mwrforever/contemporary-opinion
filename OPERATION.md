@@ -26,9 +26,8 @@
 
 | 工作流 | 触发时机 | 做什么 |
 |--------|----------|--------|
-| `CI` | push 到 main / PR 到 main | 静态分析（0 error 通过）→ 全量单元测试 → 构建 Web 与 Android APK（产物保留 14 天） |
-| `Deploy (GitHub Pages)` | CI 成功后 | 把 Web 产物部署到 GitHub Pages（项目站点） |
-| `Release` | 打 tag（`v*`） | 构建 Web + Android APK，创建 **GitHub Release** 供下载 |
+| `CI` | push 到 main / PR 到 main | 静态分析（0 error 通过）→ 全量单元测试 → 构建 Android APK（产物保留 14 天） |
+| `Release` | 打 tag（`v*`） | 构建 Android APK，创建 **GitHub Release** 供下载 |
 
 ### 如何发布一版 APK（重点）
 
@@ -41,12 +40,9 @@ git push origin v1.0.0
 
 # 2. 等待 Actions → Release 工作流跑完（约 10~15 分钟）
 
-# 3. 在仓库页面右侧的 Releases 里下载：
-#    - app-release.apk          → Android 安装包（直接安装）
-#    - web-build.zip            → Web 站点包（Pages 已自动部署，无需手动下载）
+# 3. 在仓库页面右侧的 Releases 里下载 app-release.apk 直接安装
 ```
 
-> 也可改用 `git push origin main && git tag v1.0.0 && git push origin v1.0.0` 一步到位。
 > 更新版本号后重新打新 tag（如 `v1.0.1`）即可再次发布。
 
 ---
@@ -78,9 +74,6 @@ flutter pub get
 
 # 构建 Android 安装包（输出 build/app/outputs/flutter-apk/）
 flutter build apk --release
-
-# 构建 Web（输出 build/web/）
-flutter build web --release
 
 # 全量测试 + 静态分析（合入 main 前必须本地全过）
 flutter test

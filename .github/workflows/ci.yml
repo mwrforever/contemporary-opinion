@@ -14,9 +14,6 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.44.6"
   FLUTTER_CHANNEL: stable
-  # GitHub Pages 项目站点基址（仓库名 contemporary-opinion）。
-  # 若改用自定义域名或 user/org 页，请改为 "/"。
-  BASE_HREF: /contemporary-opinion/
 
 jobs:
   analyze_test:
@@ -37,36 +34,6 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: Run tests
         run: flutter test
-
-  build_web:
-    name: Build Web
-    needs: analyze_test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: ${{ env.FLUTTER_CHANNEL }}
-          cache: true
-      - name: Install dependencies
-        run: flutter pub get
-      - name: Prepare local secrets file (secrets.dart 不入库，从示例模板生成)
-        run: cp lib/config/secrets.dart.example lib/config/secrets.dart
-      - name: Build web release
-        # DASHSCOPE_* 通过 --dart-define 注入；仓库未设 Secrets 时为空串 -> 自动走本地兜底
-        run: |
-          flutter build web --release \
-            --base-href "$BASE_HREF" \
-            --dart-define=DASHSCOPE_API_KEY="${{ secrets.DASHSCOPE_API_KEY }}" \
-            --dart-define=DASHSCOPE_BASE_URL="${{ secrets.DASHSCOPE_BASE_URL }}"
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-build
-          path: build/web
-          if-no-files-found: error
-          retention-days: 14
 
   build_android:
     name: Build Android APK

@@ -16,11 +16,10 @@ concurrency:
 env:
   FLUTTER_VERSION: "3.44.6"
   FLUTTER_CHANNEL: stable
-  BASE_HREF: /contemporary-opinion/
 
 jobs:
   build:
-    name: Build Web + Android (signed if configured)
+    name: Build Android APK (signed if configured)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,12 +57,6 @@ jobs:
           else
             echo "未配置 KEYSTORE_BASE64，构建将回退 debug 签名"
           fi
-      - name: Build web release
-        run: |
-          flutter build web --release \
-            --base-href "$BASE_HREF" \
-            --dart-define=DASHSCOPE_API_KEY="${{ secrets.DASHSCOPE_API_KEY }}" \
-            --dart-define=DASHSCOPE_BASE_URL="${{ secrets.DASHSCOPE_BASE_URL }}"
       - name: Build Android APK (with AGP fallback)
         shell: bash
         run: |
@@ -84,9 +77,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
-          path: |
-            build/web
-            build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
   release:
@@ -98,17 +89,10 @@ jobs:
         with:
           name: release-artifacts
           path: release-artifacts
-      - name: Prepare assets
-        run: |
-          cd release-artifacts
-          mv build/app/outputs/flutter-apk/app-release.apk app-release.apk
-          zip -r web-build.zip build/web
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-artifacts/app-release.apk
-            release-artifacts/web-build.zip
+          files: release-artifacts/app-release.apk
           generate_release_notes: true
 
   # 可选：iOS 构建。需要 Apple 开发者证书/描述文件才能产出可分发 IPA。

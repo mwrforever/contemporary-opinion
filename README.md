@@ -49,9 +49,6 @@ flutter run
 
 # 构建 Android 安装包（输出 build/app/outputs/flutter-apk/）
 flutter build apk --release
-
-# 构建 Web
-flutter build web --release
 ```
 
 首次运行会请求**麦克风 / 通知 / 精确闹钟**权限；未配置云端密钥时自动走「本地 NLP + 设备端识别」，开箱即用。
@@ -78,9 +75,8 @@ flutter analyze     # 静态分析（0 error 通过）
 
 仓库配置了 GitHub Actions 自动化（详见 [OPERATION.md](OPERATION.md)）：
 
-- **CI**：push/PR 到 main 自动执行分析 + 全量测试 + 构建 Web 与 Android APK
-- **Deploy**：CI 通过后自动部署 Web 到 GitHub Pages
-- **Release**：推送 `v*` tag 自动构建并发布 **GitHub Release**
+- **CI**：push/PR 到 main 自动执行分析 + 全量测试 + 构建 Android APK（产物在 Actions 页保留 14 天）
+- **Release**：推送 `v*` tag 自动构建并发布 **GitHub Release**，APK 可直接下载安装
 
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
@@ -96,10 +92,9 @@ git tag v1.0.0 && git push origin v1.0.0
 ## 已知限制
 
 1. 密钥前端直连仅限 Demo：生产需走后端代理。
-2. Web 端浏览器无法系统级调度未来通知，完整体验请用移动端。
-3. 应用被杀后仅系统通知（响铃/播报在应用存活时最佳）。
-4. 重复任务冲突判定为未来 30 天窗口近似展开。
-5. 本地 NLP 为启发式解析，极口语化表述可能需手动校正。
+2. 应用被杀后仅系统通知（响铃/播报在应用存活时最佳）。
+3. 重复任务冲突判定为未来 30 天窗口近似展开。
+4. 本地 NLP 为启发式解析，极口语化表述可能需手动校正。
 
 ## 许可与约定
 
